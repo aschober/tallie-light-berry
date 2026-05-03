@@ -1,0 +1,6 @@
+# Environment config
+*.env
+# build dir
+build/
+# Built tapp files
+*.tapp

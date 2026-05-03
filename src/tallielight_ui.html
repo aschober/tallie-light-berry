@@ -1,0 +1,784 @@
+<style>
+  .h{display:none!important}
+  .err{color:red}
+  /* Disabled state for full-width Tasmota buttons (.button) and compact in-card buttons (.tcb). */
+  .button:disabled,.tcb:disabled{background:var(--c_btnoff)!important;cursor:not-allowed;opacity:.6}
+  /* Green Save button keeps its green color when disabled — overrides the blue .button:disabled above. */
+  .button.bgrn:disabled{background:var(--c_btnsv)!important}
+  /* OAuth section elements can contain long URLs/codes — prevent overflow. */
+  #account-section fieldset,#account-section p,#account-section div{max-width:100%;box-sizing:border-box;overflow-wrap:break-word}
+  /* Error banner shown when Berry reports an OAuth error (oa_err). */
+  .ec{background:#ffe6e6;border-left:3px solid #d43535;padding:8px;margin:8px 0;border-radius:3px;color:#d43535;font-size:.85em;line-height:1.4;word-break:break-all}
+  /* Settings section layout: label on left, control on right. */
+  .st{display:flex;flex-direction:column;width:100%}
+  .row{display:flex;justify-content:space-between;align-items:center;padding-bottom:5px;margin-right:10px;margin-bottom:2px;min-height:26px}
+  .srow{display:flex;justify-content:space-between;align-items:center;padding-bottom:2px;min-height:26px}
+  /* Color radio rows include a color picker; align top so the picker doesn't push the label off-center. */
+  .row:has(.cog){align-items:flex-start}
+  .sl{width:170px;flex-shrink:0;font-size:.9em}
+  .si{font-size:.9em}
+  /* Team card container. */
+  .tc{border:0;border-radius:.3rem;padding:5px 5px 2px;margin-bottom:7px;--c_card:rgba(255,255,255,.1);background:var(--c_card);position:relative}
+  /* Card header: team title + up/down buttons on left, × remove button on right. */
+  .tch{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;padding:0 0 5px}
+  .tct{font-weight:bolder;font-size:1em}
+  .tcc{display:flex;gap:2px}
+  /* width:auto and line-height:1.5 override Tasmota base button{width:100%;line-height:2.4rem} so the in-card up/down/× buttons stay compact. */
+  .tcb{width:auto;border:0;border-radius:.3rem;padding:2px 6px;cursor:pointer;font-size:.8em;line-height:1.5;transition-duration:.4s;background:var(--c_btn);color:var(--c_btntxt)}
+  .tcb:hover:not(:disabled){background:var(--c_btnhvr)}
+  .tcb.rm{background:var(--c_btnrst)}
+  .tcb.rm:hover:not(:disabled){background:var(--c_btnrsthvr)}
+  /* Team card label and input widths. */
+  .tcl{width:80px;text-align:left;font-size:.9em}
+  .tci{width:200px;font-size:.85em}
+  /* Color picker group: stacks primary/alternate/custom radio rows vertically. */
+  .cog{display:flex;flex-direction:column;gap:5px;align-items:flex-start;margin-top:-5px;margin-left:-15px}
+  .cog label{display:flex;align-items:center;cursor:pointer}
+  .cog input[type=color]{width:100%}
+  /* Color option rows: primary/alternate on first row, custom+picker on second. */
+  .cor,.ccr{display:flex;gap:10px;width:100%}
+  .ccr{align-items:center}
+  .cc{box-sizing:border-box;border-radius:0;-webkit-border-radius:0}
+  /* Team search picker: relative wrapper so the results dropdown is absolutely positioned inside it. */
+  .tsp{position:relative}
+  .tsp-i{width:100%;box-sizing:border-box;margin:0 0 0 5px;font-size:1em}
+  /* Dropdown results list — hidden by default, revealed via .open. z-index keeps it above sibling card rows. */
+  .tsp-r{position:absolute;z-index:100;background:var(--c_frm);border:1px solid var(--c_bg);border-radius:.3rem;width:100%;max-height:160px;overflow-y:auto;list-style:none;margin:2px 0 0;padding:0;display:none}
+  .tsp-r.open{display:block}
+  .tsp-r li{padding:4px 6px;cursor:pointer;font-size:.9em}
+  .tsp-r li:hover,.tsp-r li.active{background:var(--c_btn);color:var(--c_btntxt)}
+  /* .nr = "no results" placeholder row — not selectable. */
+  .tsp-r li.nr,.tsp-r li.nr:hover{background:0 0;color:var(--c_tab);cursor:default}
+  /* Derived UI state — auth & saving drive opacity / interactivity declaratively. */
+  /* Teams section is read-only (faded, no pointer events) in any non-authed state. */
+  body[data-auth=unauthed] #team-config-section,body[data-auth=pending] #team-config-section,body[data-auth=expired-refresh] #team-config-section,body[data-auth=expired-reauth] #team-config-section{opacity:.5;pointer-events:none}
+  /* In-card buttons also need explicit off treatment because the opacity rule above doesn't set background. */
+  body[data-auth=unauthed] #team-config-section .tcb,body[data-auth=pending] #team-config-section .tcb,body[data-auth=expired-refresh] #team-config-section .tcb,body[data-auth=expired-reauth] #team-config-section .tcb{background:var(--c_btnoff)!important;opacity:.6}
+  /* Desaturate radio/checkbox accent so they look disabled alongside the faded section. */
+  body[data-auth=unauthed] #team-config-section input[type="radio"],body[data-auth=unauthed] #team-config-section input[type="checkbox"],body[data-auth=pending] #team-config-section input[type="radio"],body[data-auth=pending] #team-config-section input[type="checkbox"],body[data-auth=expired-refresh] #team-config-section input[type="radio"],body[data-auth=expired-refresh] #team-config-section input[type="checkbox"],body[data-auth=expired-reauth] #team-config-section input[type="radio"],body[data-auth=expired-reauth] #team-config-section input[type="checkbox"]{accent-color:var(--c_btnoff)}
+  /* Save button dims and blocks interaction while the form POST is in flight. */
+  body[data-saving] button[name=apply-btn]{opacity:.6;pointer-events:none}
+  /* Card loading state: thin pulsing bar along the top edge of the card. */
+  .tc[data-state=loading]::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;border-radius:.3rem .3rem 0 0;background:rgba(255,255,255,.2);animation:sk 1.2s ease-in-out infinite}
+  @keyframes sk{0%,100%{opacity:.3}50%{opacity:1}}
+  /* Color row hidden until a team is selected (data-state=ready + data-team).
+     No data-state means an empty new card — hide it there too. */
+  .tc:not([data-state]) [data-f=color-row],.tc[data-state=loading]:not([data-saved-team]) [data-f=color-row],.tc[data-state=ready]:not([data-team]) [data-f=color-row]{display:none}
+  /* OAuth visibility: each element tagged with data-show="state1 state2 …" is hidden by default;
+     revealed when body[data-auth] matches one of the listed states.
+     Specificity note: the show rule must out-rank the hide rule without an ID qualifier. */
+  [data-show]{display:none!important}
+  body[data-auth=pending] [data-show~=pending],body[data-auth=authed] [data-show~=authed],body[data-auth=expired-refresh] [data-show~=expired-refresh],body[data-auth=expired-reauth] [data-show~=expired-reauth],body[data-auth=unauthed] [data-show~=unauthed]{display:revert!important}
+  /* .oab = OAuth action button wrapper (<form> elements that must render inline). */
+  body[data-auth=pending] .oab[data-show~=pending],body[data-auth=authed] .oab[data-show~=authed],body[data-auth=expired-refresh] .oab[data-show~=expired-refresh],body[data-auth=expired-reauth] .oab[data-show~=expired-reauth],body[data-auth=unauthed] .oab[data-show~=unauthed]{display:inline-block!important}
+  /* In authed state the email/expiry rows are moved into the compact authed block by JS. */
+  #account-section > fieldset > div[data-show~=authed]{padding:5px}
+  #account-info-slot{padding:0 0 0 5px}
+  #account-info-authed-slot{padding:0}
+  /* Expired states: mute the status message so it reads as informational, not alarming. */
+  body[data-auth=expired-refresh] #account-status-message,body[data-auth=expired-reauth] #account-status-message{color:var(--c_tab);font-size:.9em}
+  body[data-auth=expired-refresh] #account-status,body[data-auth=expired-reauth] #account-status{margin-bottom:7px!important}
+  /* Error container hidden by default; .show class added by JS when oa_err is set. */
+  #account-error{display:none}
+  #account-error.show{display:block}
+</style>
+
+<!-- Team card template — cloned by makeCard() for each configured team.
+     Field refs are cached on card._f at clone time to avoid repeated querySelector calls. -->
+<template id="ct">
+  <div class="tc">
+    <!-- Card header: "Team N" title + up/down reorder buttons + × remove button. -->
+    <div class="tch">
+      <div style="display:flex;align-items:center;gap:4px">
+        <div class="tct"></div>
+        <div class="tcc">
+          <button type="button" class="tcb" data-act="up" title="Move Up">↑</button>
+          <button type="button" class="tcb" data-act="down" title="Move Down">↓</button>
+        </div>
+      </div>
+      <div>
+        <button type="button" class="tcb rm" data-act="remove" title="Remove">×</button>
+      </div>
+    </div>
+    <!-- League dropdown — populated from /leagues on first card creation. -->
+    <div class="row"><div class="tcl">League</div>
+      <select class="tci" data-f="league"><option>Loading…</option></select>
+    </div>
+    <!-- Team search typeahead — small leagues filter client-side; large leagues (>40 teams) query the API. -->
+    <div class="row"><div class="tcl">Team</div>
+      <div class="tsp tci">
+        <input class="tsp-i" type="text" placeholder="Search…" autocomplete="off" data-f="search">
+        <ul class="tsp-r" data-f="results"></ul>
+      </div>
+    </div>
+    <!-- Color picker — hidden by CSS until data-state=ready. -->
+    <div class="row" data-f="color-row"><div class="tcl">Color</div>
+      <div class="tci cog">
+        <div class="cor">
+          <label><input type="radio" data-f="opt-primary" value="primary" checked>Primary</label>
+          <label><input type="radio" data-f="opt-alternate" value="alternate">Alternate</label>
+        </div>
+        <div class="ccr">
+          <label><input type="radio" data-f="opt-custom" value="custom">Custom</label>
+          <input class="cc" type="color" data-f="color">
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ===================== ACCOUNT SECTION ===================== -->
+<!-- OAuth state is purely CSS-driven: body[data-auth=STATE] shows/hides elements
+     tagged with data-show="state …". JS sets body.dataset.auth via render(). -->
+<div id="account-section">
+  <fieldset><legend><b>Account</b></legend>
+    <!-- Email and subscription rows are moved between #account-info-slot (non-authed)
+         and #account-info-authed-slot (authed) by renderOAuth() so they appear in the
+         right position within the authed compact block. -->
+    <div id="account-info-slot">
+      <p id="account-email-row" data-show="authed expired-refresh expired-reauth"><b>Email:</b> <span id="account-email"></span></p>
+      <p id="account-subscription-row" data-show="authed expired-refresh expired-reauth"><b>Plan:</b> <span id="account-subscription">Basic</span></p>
+    </div>
+    <!-- Status message shown in pending / expired states. -->
+    <p id="account-status" data-show="pending expired-refresh expired-reauth" style="padding-left:5px;margin-bottom:2px"><span id="account-status-message"></span></p>
+    <!-- Device-flow login instructions: verification URL + user code shown while pending. -->
+    <div data-show="pending" style="padding-top:0">
+      <p><a id="login-verification-url" href="#" target="_blank" style="word-break:break-all"></a></p>
+      <p style="margin-top:20px"><b>User Code:</b> <code id="login-user-code"></code></p>
+    </div>
+    <!-- Polling countdown message shown while device-flow poll timer is active. -->
+    <p id="login-polling-status" data-show="pending" style="opacity:.8;font-size:.9em;padding-left:5px"><span id="login-polling-message"></span></p>
+    <!-- Authed compact block: email/expiry slots populated by renderOAuth(), Log Out button. -->
+    <div data-show="authed">
+      <div id="account-info-authed-slot"></div>
+      <p style="color:var(--c_tab);font-size:.9em;margin-top:2px;margin-bottom:12px"><span id="account-token-expiry"></span></p>
+      <!-- Log Out posts oa-action=clear_all → Berry clears all OAuth state and redirects to /tl. -->
+      <form action="/tl" method="post" class="oab" style="display:inline-block">
+        <input type="hidden" name="oa-action" value="clear_all"><button class="button">Log Out</button>
+      </form>
+    </div>
+    <p data-show="unauthed" style="padding-left:5px;margin-bottom:10px">Log in to configure teams</p>
+    <!-- Error banner — shown when Berry reports oa_err (excluding authorization_pending noise). -->
+    <div id="account-error" class="ec"><b>Error:</b> <span id="account-error-message"></span></div>
+    <!-- OAuth action buttons — each is a separate <form> so it can POST oa-action independently.
+         Berry handles each action and redirects back to /sl with updated oauth state. -->
+    <div id="account-actions">
+      <form action="/tl" method="post" class="oab" style="margin-right:10px" data-show="unauthed expired-reauth">
+        <input type="hidden" name="oa-action" value="initiate"><button>Log In</button>
+      </form>
+      <form action="/tl" method="post" class="oab" style="margin-right:10px" data-show="pending">
+        <input type="hidden" name="oa-action" value="complete"><button>Continue</button>
+      </form>
+      <form action="/tl" method="post" class="oab" style="margin-right:10px" data-show="pending">
+        <input type="hidden" name="oa-action" value="clear_pending"><button>Cancel</button>
+      </form>
+      <form action="/tl" method="post" class="oab" style="margin-right:10px" data-show="expired-refresh">
+        <input type="hidden" name="oa-action" value="refresh"><button>Reconnect</button>
+      </form>
+      <form action="/tl" method="post" class="oab" style="margin-right:10px" data-show="expired-refresh expired-reauth">
+        <input type="hidden" name="oa-action" value="clear_all"><button class="button">Log Out</button>
+      </form>
+    </div>
+  </fieldset>
+</div>
+
+<!-- ===================== CONFIG FORM ===================== -->
+<!-- Single form covering both Teams and Settings sections.
+     Hidden inputs are populated by the submit handler before the POST fires.
+     Berry handles update-config and redirects to /cn? (Tasmota config menu). -->
+<form id="config-form" action="/tl" method="post">
+  <input type="hidden" name="update-config" value="true">
+  <input type="hidden" name="team-configs" id="hf-tc">
+  <input type="hidden" name="light-restore" id="hf-lr">
+  <input type="hidden" name="turn-on-light" id="hf-tl">
+  <input type="hidden" name="animation-type" id="hf-at">
+  <!-- Teams section — faded and non-interactive when not authed (CSS-driven via body[data-auth]). -->
+  <div id="team-config-section">
+    <fieldset><legend><b>Teams</b></legend>
+      <div id="team-cards" style="margin:0 5px"></div>
+      <button type="button" id="add-team-btn" class="button" style="margin:5px auto 15px;width:80%;display:block">+ Add Team</button>
+    </fieldset>
+  </div>
+  <!-- Settings section — always interactive regardless of auth state. -->
+  <div id="system-section">
+    <fieldset><legend><b>Settings</b></legend>
+      <div class="st">
+        <!-- Light restore time: how long after a game ends before the light returns to its previous state. -->
+        <div class="srow"><span class="sl">Light Restore Time</span><span class="si">
+          <input type="number" id="light-restore-hrs" min="0" max="24" value="0" style="width:46px" required>hr
+          <input type="number" id="light-restore-min" min="0" max="59" value="0" style="width:46px" required>min
+        </span></div>
+        <div class="srow"><span class="sl">Animation</span><span class="si">
+          <select id="animation-type"><option value="breathe">Breathe<option value="comet">Comet<option value="crenel">Crenel</select>
+        </span></div>
+        <!-- When checked, Berry will turn the light on automatically when a game starts. -->
+        <div class="srow"><span class="sl">Turn on light</span><span class="si">
+          <input type="checkbox" id="turn-on-light">
+        </span></div>
+      </div>
+    </fieldset>
+    <button name="apply-btn" class="button bgrn" style="margin-top:20px">Save</button>
+  </div>
+</form>
+<p></p>
+
+<script>
+// Runs synchronously before DOMContentLoaded — all elements exist since this script is after the markup.
+function fmtDate(ts) {
+  if (!ts) return 'N/A';
+  const d = new Date(ts * 1000);
+  const date = d.toLocaleDateString(undefined, { month:'numeric', day:'numeric', year:'2-digit' });
+  const time = d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit', hour12:true });
+  const tz = d.toLocaleTimeString(undefined, { timeZoneName:'short' }).split(' ').pop() || '';
+  return `${date} ${time}${tz ? ` ${tz}` : ''}`;
+}
+
+function computeAuth(o) {
+  if (o.oa_vuc && o.oa_uc) return 'pending';
+  if (o.oa_has_at) return o.is_token_valid ? 'authed' : (o.oa_rt ? 'expired-refresh' : 'expired-reauth');
+  return 'unauthed';
+}
+const _auth = computeAuth(oauth);
+document.body.dataset.auth = _auth;
+
+// Account fields — populated from injected oauth before first paint.
+const _el = id => document.getElementById(id);
+if (oauth.oa_email) _el('account-email').textContent = oauth.oa_email;
+if (_auth === 'authed') {
+  _el('account-token-expiry').textContent = `Access Token valid until ${fmtDate(oauth.oa_ate)}`;
+} else if (_auth === 'pending') {
+  _el('account-status-message').textContent = 'Open the URL below to sign in.';
+  if (oauth.oa_uc) _el('login-user-code').textContent = oauth.oa_uc;
+  if (oauth.oa_vuc) { const a = _el('login-verification-url'); a.href = oauth.oa_vuc; a.textContent = oauth.oa_vuc; }
+} else if (_auth === 'expired-refresh' || _auth === 'expired-reauth') {
+  const msg = _auth === 'expired-refresh'
+    ? `Access Token expired ${fmtDate(oauth.oa_ate)}`
+    : `Access token expired ${fmtDate(oauth.oa_ate)} and no refresh token.`;
+  _el('account-status-message').textContent = msg;
+}
+if (oauth.oa_err && !oauth.oa_err.includes('authorization_pending')) {
+  _el('account-error').classList.add('show');
+  _el('account-error-message').textContent = oauth.oa_err;
+}
+
+// Settings fields — populated from injected conf before first paint.
+const _totalMins = conf.lightRestoreMins ?? 60;
+_el('light-restore-hrs').value = Math.floor(_totalMins / 60);
+_el('light-restore-min').value = _totalMins % 60;
+_el('turn-on-light').checked = !!conf.turnOnLight;
+_el('animation-type').value = conf.animationType ?? 'breathe';
+
+(() => {
+  // ---------- Derived UI state ----------
+  // ui is the single source of truth for auth/loading/saving state.
+  // All DOM changes flow through render() — nothing mutates the DOM directly.
+  const ui = { auth: 'unauthed', saving: false };
+  const $ = id => document.getElementById(id);
+  const body = document.body;
+  const teamCards = $('team-cards');
+  const addBtn = $('add-team-btn');
+  const applyBtn = document.querySelector('button[name=apply-btn]');
+  const configForm = $('config-form');
+  const emailRow = $('account-email-row');
+  const subscriptionRow = $('account-subscription-row');
+  const defaultEmailSlot = $('account-info-slot');
+  const authedEmailSlot = $('account-info-authed-slot');
+  const pollingMsg = $('login-polling-message');
+  const hiddenTeamConfigs = $('hf-tc');
+  const hiddenLightRestore = $('hf-lr');
+  const hiddenTurnOnLight = $('hf-tl');
+  const hiddenAnimationType = $('hf-at');
+  const inputRestoreHrs = $('light-restore-hrs');
+  const inputRestoreMin = $('light-restore-min');
+  const inputTurnOnLight = $('turn-on-light');
+  const inputAnimationType = $('animation-type');
+
+  // Apply current ui state to the DOM. Called after any state change.
+  function render() {
+    body.dataset.auth = ui.auth;
+    body.toggleAttribute('data-saving', ui.saving);
+    const realCards = [...teamCards.children];
+    const anyLoading = realCards.some(c => c.dataset.state === 'loading');
+    applyBtn.disabled = ui.saving || anyLoading;
+    applyBtn.textContent = ui.saving ? 'Saving…' : 'Save';
+    addBtn.disabled = ui.auth !== 'authed' || realCards.length >= 4;
+    addBtn.textContent = realCards.length >= 4 ? '+ Add Team (Max 4)' : '+ Add Team';
+    // Per-card up/down enable state and title (cheap; runs only on add/remove/move).
+    realCards.forEach((c, i, a) => {
+      c._f.title.textContent = 'Team ' + (i + 1);
+      c._f.up.disabled = i === 0;
+      c._f.down.disabled = i === a.length - 1;
+    });
+  }
+
+  // ---------- OAuth render ----------
+  // Re-evaluates oauth state and updates all OAuth section DOM.
+  // Called on page load and after each poll response.
+  function renderOAuth() {
+    const prev = ui.auth;
+    ui.auth = computeAuth(oauth);
+    // Move email/subscription rows only when auth state changes to avoid unnecessary DOM churn.
+    if (ui.auth !== prev) {
+      if (ui.auth === 'authed') {
+        authedEmailSlot.appendChild(emailRow);
+        authedEmailSlot.appendChild(subscriptionRow);
+      } else {
+        defaultEmailSlot.appendChild(emailRow);
+        defaultEmailSlot.appendChild(subscriptionRow);
+      }
+    }
+
+    if (ui.auth === 'pending') {
+      startPolling();
+    } else {
+      stopPolling(); pollCount.reset();
+    }
+    render();
+  }
+
+  // ---------- OAuth polling ----------
+  // Device-flow: polls /sl?poll-oauth=true every oa_pi seconds (default 5s) until
+  // the user completes sign-in on their device, up to MAX_POLLS attempts.
+  // Poll count is stored in sessionStorage so it survives page reloads.
+  let pollTimer = null, countdown = null, nextPoll = 0;
+  const MAX_POLLS = 12;
+  const pollCount = {
+    get: () => parseInt(sessionStorage.getItem('oauth_poll_count') || '0', 10),
+    increment: () => { const n = pollCount.get() + 1; sessionStorage.setItem('oauth_poll_count', n); return n; },
+    reset: () => sessionStorage.removeItem('oauth_poll_count')
+  };
+
+  function updatePollMsg() {
+    const remain = Math.max(0, Math.ceil((nextPoll - Date.now()) / 1000));
+    const c = pollCount.get();
+    pollingMsg.textContent = remain > 0
+      ? `Auto checking for sign-in in ${remain}s…`
+      : `Auto checking for sign-in… (${c}/${MAX_POLLS})`;
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (pollCount.get() >= MAX_POLLS) {
+      pollingMsg.textContent = `Once signed in, tap "Continue".`;
+      return;
+    }
+    const intervalMs = (oauth.oa_pi || 5) * 1000;
+    nextPoll = Date.now() + intervalMs;
+    countdown = setInterval(updatePollMsg, 1000);
+    updatePollMsg();
+    pollTimer = setTimeout(() => {
+      if (document.hidden) { startPolling(); return; } // skip poll if tab is backgrounded
+      const n = pollCount.increment();
+      pollingMsg.textContent = `Auto-refreshing to check for completed login… (${n}/${MAX_POLLS})`;
+      fetch('/tl', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'poll-oauth=true' })
+        .then(r => r.json())
+        .then(d => {
+          oauth = d;
+          renderOAuth();
+        })
+        .catch(() => { pollingMsg.textContent = 'Error checking login status. Retrying…'; startPolling(); });
+    }, intervalMs);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (countdown) { clearInterval(countdown); countdown = null; }
+  }
+
+  // ---------- Access token + apiFetch ----------
+  // The JWT access token is never embedded in the page payload — it's fetched
+  // on-demand from Berry via get-token=1 and cached for the page lifetime.
+  // apiFetch automatically retries once on 401 to handle token refresh.
+  let accessToken = null;
+  async function getToken() {
+    if (accessToken) return accessToken;
+    const r = await fetch('/tl', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'get-token=1' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return accessToken = d.oa_at || null;
+  }
+
+  async function apiFetch(url, init = {}) {
+    let t = await getToken();
+    if (!t) throw new Error('No access token');
+    const doFetch = tk => fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${tk}` } });
+    let r = await doFetch(t);
+    if (r.status === 401) {
+      accessToken = null;
+      t = await getToken();
+      if (!t) return r;
+      r = await doFetch(t);
+    }
+    return r;
+  }
+
+  // ---------- League / team caches ----------
+  // In-flight promises are deduplicated so multiple cards don't trigger parallel
+  // requests for the same resource. LARGE_LEAGUE threshold controls whether a
+  // league uses client-side filtering or server-side search.
+  let leaguesCache = null, leaguesFlight = null;
+  const teamsCache = {}, teamsFlight = {};
+  const LARGE_LEAGUE = 40;
+  const isAuthed = () => ui.auth === 'authed';
+
+  function fetchLeagues() {
+    if (leaguesCache) return Promise.resolve(leaguesCache);
+    if (leaguesFlight) return leaguesFlight;
+    if (!isAuthed()) return Promise.resolve([]);
+    return leaguesFlight = apiFetch(`${apiUrl}/leagues`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => { leaguesCache = d; return d; })
+      .catch(e => { console.error('leagues:', e); return []; })
+      .finally(() => { leaguesFlight = null; });
+  }
+
+  function fetchTeams(league) {
+    if (teamsCache[league]) return Promise.resolve(teamsCache[league]);
+    if (teamsFlight[league]) return teamsFlight[league];
+    if (!isAuthed()) return Promise.resolve([]);
+    return teamsFlight[league] = apiFetch(`${apiUrl}/teams?league=${encodeURIComponent(league)}`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => { d.forEach(normalizeColors); teamsCache[league] = d; return d; })
+      .catch(e => { console.error('teams:', e); return []; })
+      .finally(() => { delete teamsFlight[league]; });
+  }
+
+  // Teams API may omit the '#' prefix on hex colors.
+  function normalizeColors(t) {
+    if (t.color && !t.color.startsWith('#')) t.color = '#' + t.color;
+    if (t.alternateColor && !t.alternateColor.startsWith('#')) t.alternateColor = '#' + t.alternateColor;
+  }
+
+  function isLargeLeague(id) {
+    if (!leaguesCache) return false;
+    const l = leaguesCache.find(x => x.id === id);
+    return l && l.teamCount != null && l.teamCount > LARGE_LEAGUE;
+  }
+
+  // ---------- Card creation ----------
+  const cardTemplate = $('ct');
+  const searchTimers = new WeakMap();
+  let cardCounter = 0;
+
+  function makeCard(config) {
+    const card = cardTemplate.content.firstElementChild.cloneNode(true);
+    // Build field-ref cache once at creation; replaces ~30 querySelector calls.
+    const r = {
+      title: card.querySelector('.tct'),
+      up: card.querySelector('[data-act=up]'),
+      down: card.querySelector('[data-act=down]'),
+      remove: card.querySelector('[data-act=remove]'),
+      league: card.querySelector('[data-f=league]'),
+      search: card.querySelector('[data-f=search]'),
+      results: card.querySelector('[data-f=results]'),
+      color: card.querySelector('[data-f=color]'),
+      optPrimary: card.querySelector('[data-f=opt-primary]'),
+      optAlternate: card.querySelector('[data-f=opt-alternate]'),
+      optCustom: card.querySelector('[data-f=opt-custom]'),
+    };
+    card._f = r;
+    card._team = null;      // currently-selected team object (for primary/alternate color reads)
+    card._saved = config;   // saved config; consumed by populateLeagues/populateTeam
+    card.dataset.state = 'loading';
+    // Each card needs a unique radio group name so color options are independent across cards.
+    const radioName = 'co_' + (++cardCounter);
+    [r.optPrimary, r.optAlternate, r.optCustom].forEach(i => i.name = radioName);
+    r.search.value = config.teamName || '';
+    r.color.value = config.selectedColor || '#000000';
+    if (config.teamName) {
+      card.dataset.savedTeam = '1';
+      // No team object yet — default radio to custom so the saved color is meaningful.
+      r.optCustom.checked = true;
+    }
+    return card;
+  }
+
+  async function populateLeagues(card) {
+    const saved = card._saved.league || 'nba';
+    const leagues = await fetchLeagues();
+    const sel = card._f.league;
+    sel.innerHTML = '';
+    if (leagues.length === 0) {
+      // API unavailable — fall back to showing the saved league so the card isn't blank.
+      sel.appendChild(new Option(saved.toUpperCase(), saved, true, true));
+    } else {
+      for (const l of leagues) {
+        const opt = new Option(l.displayName, l.id, l.id === saved, l.id === saved);
+        sel.appendChild(opt);
+      }
+    }
+    await populateTeam(card, saved, card._saved.teamSlug || '');
+  }
+
+  async function populateTeam(card, league, slug) {
+    // Called both on init (slug from saved config) and on user league change (slug empty → skip).
+    if (!slug) {
+      card.dataset.state = 'ready';
+      render();
+      return;
+    }
+    try {
+      let match;
+      if (isLargeLeague(league)) {
+        // Large leagues (e.g. NCAA) aren't fully cached — fetch the specific team by slug.
+        const r = await apiFetch(`${apiUrl}/teams?slug=${encodeURIComponent(slug)}`);
+        if (r.ok) { match = await r.json(); normalizeColors(match); }
+      } else {
+        const ts = await fetchTeams(league);
+        match = ts.find(t => t.slug === slug);
+      }
+      if (match) selectTeam(card, match, false);
+    } finally {
+      if (!card._team) {
+        card.dataset.state = 'ready';
+        if (card._saved.teamSlug) card.dataset.team = '1';
+      }
+      render();
+    }
+  }
+
+  // ---------- Team selection ----------
+  function writeTeam(card, team) {
+    const f = card._f;
+    card._team = team;
+    card.dataset.team = '1';
+    f.search.value = team.displayName || '';
+    f.results.classList.remove('open');
+  }
+
+  // Determine which color radio to check when a team is selected.
+  // isRestore=true: match the saved color back to primary/alternate/custom.
+  // isRestore=false (new pick): always default to primary.
+  function pickColorRadio(card, team, isRestore) {
+    const f = card._f;
+    if (!isRestore) {
+      f.color.value = team.color || '#000000';
+      f.optPrimary.checked = true;
+      return;
+    }
+    const cur = f.color.value.toLowerCase();
+    const pri = (team.color || '#000000').toLowerCase();
+    const alt = (team.alternateColor || '#000000').toLowerCase();
+    let pick = 'primary';
+    if (cur === alt && alt !== '#000000') pick = 'alternate';
+    else if (cur !== pri && cur !== alt) pick = 'custom';
+    f.optPrimary.checked = pick === 'primary';
+    f.optAlternate.checked = pick === 'alternate';
+    f.optCustom.checked = pick === 'custom';
+  }
+
+  function selectTeam(card, team, isNew) {
+    card.dataset.state = 'ready';
+    writeTeam(card, team);
+    pickColorRadio(card, team, !isNew);
+  }
+
+  function clearSelection(card) {
+    const f = card._f;
+    card._team = null;
+    delete card.dataset.team;
+    card.dataset.state = 'ready';
+    f.search.value = '';
+    f.results.classList.remove('open');
+    f.color.value = '#000000';
+  }
+
+  // ---------- Team search ----------
+  function renderResults(card, teams) {
+    const list = card._f.results;
+    list.innerHTML = '';
+    if (teams.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'nr'; li.textContent = 'No teams found';
+      list.appendChild(li);
+    } else {
+      for (const t of teams) {
+        const li = document.createElement('li');
+        li.textContent = t.displayName;
+        li._team = t;
+        list.appendChild(li);
+      }
+    }
+    list.classList.add('open');
+  }
+
+  function onSearch(card) {
+    const f = card._f;
+    const q = f.search.value.trim();
+    const league = f.league.value;
+    clearTimeout(searchTimers.get(card));
+    if (!q) { f.results.classList.remove('open'); return; }
+    if (!isLargeLeague(league) && teamsCache[league]) {
+      // Small league: filter the local cache immediately.
+      const lo = q.toLowerCase();
+      renderResults(card, teamsCache[league].filter(t =>
+        (t.displayName && t.displayName.toLowerCase().includes(lo)) ||
+        (t.shortDisplayName && t.shortDisplayName.toLowerCase().includes(lo)) ||
+        (t.location && t.location.toLowerCase().includes(lo))));
+    } else {
+      // Large league or cache miss: debounce 300ms then query the API.
+      searchTimers.set(card, setTimeout(async () => {
+        try {
+          const r = await apiFetch(`${apiUrl}/teams?league=${encodeURIComponent(league)}&search=${encodeURIComponent(q)}`);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const d = await r.json();
+          if (f.search.value.trim() !== q) return; // user typed something else while waiting
+          d.forEach(normalizeColors);
+          renderResults(card, d);
+        } catch (e) { console.error('search:', e); }
+      }, 300));
+    }
+  }
+
+  function onSearchFocus(card) {
+    const f = card._f;
+    if (card._team) f.search.select();
+    else if (!isLargeLeague(f.league.value) && teamsCache[f.league.value]) renderResults(card, teamsCache[f.league.value]);
+  }
+
+  function onSearchKeydown(e, card) {
+    const list = card._f.results;
+    if (e.key === 'Escape') { list.classList.remove('open'); return; }
+    const items = [...list.querySelectorAll('li:not(.nr)')];
+    if (!items.length) return;
+    const active = list.querySelector('li.active');
+    let idx = items.indexOf(active);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (active) active.classList.remove('active');
+      idx = (idx + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+      items[idx].classList.add('active');
+      items[idx].scrollIntoView({ block:'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = active || items[0];
+      if (target && target._team) selectTeam(card, target._team, true);
+    }
+  }
+
+  // ---------- Card add / remove / move ----------
+  function addCard(config = {}) {
+    if (teamCards.children.length >= 4) return;
+    const card = makeCard(config);
+    teamCards.appendChild(card);
+    render();
+    populateLeagues(card); // populateTeam's finally always calls render() on completion
+  }
+
+  function removeCard(card) {
+    clearTimeout(searchTimers.get(card));
+    card.remove();
+    render();
+  }
+
+  function moveCard(card, dir) {
+    const cards = [...teamCards.children];
+    const i = cards.indexOf(card);
+    const j = i + dir;
+    if (j < 0 || j >= cards.length) return;
+    if (dir === -1) teamCards.insertBefore(card, cards[j]);
+    else teamCards.insertBefore(card, cards[j].nextSibling);
+    render();
+  }
+
+  // ---------- Delegated event handlers ----------
+  // All card interactions bubble up to #team-cards to avoid per-card listeners.
+  teamCards.addEventListener('click', e => {
+    const card = e.target.closest('.tc'); if (!card) return;
+    const act = e.target.dataset.act;
+    if (act === 'up') moveCard(card, -1);
+    else if (act === 'down') moveCard(card, 1);
+    else if (act === 'remove') removeCard(card);
+  });
+
+  teamCards.addEventListener('change', e => {
+    const card = e.target.closest('.tc'); if (!card) return;
+    const f = e.target.dataset.f;
+    if (f === 'league') {
+      clearSelection(card);
+      if (!isLargeLeague(card._f.league.value)) fetchTeams(card._f.league.value);
+    } else if (f === 'color') {
+      // Editing the color picker directly switches the radio to "custom".
+      card._f.optCustom.checked = true;
+    } else if (f && f.startsWith('opt-') && card._team) {
+      const v = e.target.value;
+      if (v === 'primary') card._f.color.value = card._team.color || '#000000';
+      else if (v === 'alternate') card._f.color.value = card._team.alternateColor || '#000000';
+      // 'custom' keeps current color picker value unchanged
+    }
+  });
+
+  teamCards.addEventListener('input', e => {
+    const card = e.target.closest('.tc'); if (!card) return;
+    if (e.target.dataset.f === 'search') onSearch(card);
+  });
+
+  teamCards.addEventListener('focusin', e => {
+    const card = e.target.closest('.tc'); if (!card) return;
+    if (e.target.dataset.f === 'search') onSearchFocus(card);
+  });
+
+  teamCards.addEventListener('keydown', e => {
+    const card = e.target.closest('.tc'); if (!card) return;
+    if (e.target.dataset.f === 'search') onSearchKeydown(e, card);
+  });
+
+  // mousedown (not click) so the search input keeps focus during the list item click.
+  teamCards.addEventListener('mousedown', e => {
+    const li = e.target.closest('.tsp-r li'); if (!li || !li._team) return;
+    const card = e.target.closest('.tc'); if (!card) return;
+    e.preventDefault();
+    selectTeam(card, li._team, true);
+  });
+
+  // Close any open results dropdown when clicking outside a search picker.
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.tsp') && document.querySelector('.tsp-r.open')) {
+      document.querySelectorAll('.tsp-r.open').forEach(l => l.classList.remove('open'));
+    }
+  });
+
+  // ---------- Init ----------
+  renderOAuth();
+
+  const teamConfigs = conf.teamConfigs;
+  if (teamConfigs && teamConfigs.length) teamConfigs.forEach(c => addCard(c));
+  else addCard({});
+
+  addBtn.addEventListener('click', () => addCard({}));
+
+  configForm.addEventListener('submit', e => {
+    const form = e.currentTarget;
+    if (!form.checkValidity()) { e.preventDefault(); form.reportValidity(); return; }
+    // Collect team configs. Prefer the live _team object (from search/select
+    // or restore); fall back to the saved config so a card whose saved slug
+    // didn't resolve (e.g. transient API failure) still round-trips.
+    const out = [];
+    for (const c of teamCards.children) {
+      const f = c._f;
+      const t = c._team;
+      const s = c._saved || {};
+      const slug = t ? t.slug : (s.teamSlug || '');
+      if (!slug) continue;
+      out.push({
+        league: f.league.value,
+        teamSlug: slug,
+        teamAbbrev: t ? (t.abbreviation || '') : (s.teamAbbrev || ''),
+        teamName: t ? (t.displayName || '') : (s.teamName || ''),
+        selectedColor: f.color.value
+      });
+    }
+    hiddenTeamConfigs.value = JSON.stringify(out);
+    const hrs = parseInt(inputRestoreHrs.value) || 0;
+    const min = parseInt(inputRestoreMin.value) || 0;
+    // Clamp restore time to 1–1440 minutes (1 min to 24 hrs).
+    hiddenLightRestore.value = Math.min(1440, Math.max(1, hrs * 60 + min));
+    hiddenTurnOnLight.value = inputTurnOnLight.checked ? 'true' : 'false';
+    hiddenAnimationType.value = inputAnimationType.value;
+    // Saving indicator: prevents double-submits during pre-navigation window.
+    ui.saving = true;
+    render();
+    // Allow native form submission to continue → POST /sl → Berry redirects to /cn?
+  });
+})();
+</script>

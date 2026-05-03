@@ -1,0 +1,110 @@
+<style>.h{display:none!important}.err{color:red}.button:disabled,.tcb:disabled{background:var(--c_btnoff)!important;cursor:not-allowed;opacity:.6}#account-section fieldset,#account-section p,#account-section div{max-width:100%;box-sizing:border-box;word-wrap:break-word;overflow-wrap:break-word}.ec{background:#ffe6e6;border-left:3px solid #d43535;padding:8px;margin:8px 0;border-radius:3px;color:#d43535;font-size:.85em;line-height:1.4;word-break:break-all}.st{display:flex;flex-direction:column;width:100%}.row{display:flex;justify-content:space-between;align-items:center;padding-bottom:5px;margin-right:10px;margin-bottom:2px;min-height:26px}.srow{display:flex;justify-content:space-between;align-items:center;padding-bottom:2px;min-height:26px}.row:has(.cog){align-items:flex-start}.sl{width:170px;flex-shrink:0;font-size:.9em}.si{font-size:.9em}.tc{border:0;border-radius:.3rem;padding:5px 5px 2px;margin-bottom:7px;background:rgba(255,255,255,.1);position:relative}.tch{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;padding-top:0;padding-right:0;padding-bottom:5px;padding-left:0}.tct{font-weight:bolder;font-size:1em}.tcc{display:flex;gap:2px}.tcb{width:auto;border:0;border-radius:.3rem;padding:2px 6px;cursor:pointer;font-size:.8em;line-height:1.5;transition-duration:.4s;background:var(--c_btn);color:var(--c_btntxt)}.tcb:hover:not(:disabled){background:var(--c_btnhvr)}.tcb.rm{background:var(--c_btnrst)}.tcb.rm:hover:not(:disabled){background:var(--c_btnrsthvr)}.tcl{width:80px;text-align:left;font-size:.9em}.tci{width:200px;font-size:.85em}.cog{display:flex;flex-direction:column;gap:5px;align-items:flex-start;margin-top:-5px;margin-left:-15px}.cog label{display:flex;align-items:center;cursor:pointer}.cog input[type=color]{width:100%}.cor,.ccr{display:flex;gap:10px;width:100%}.ccr{align-items:center}.cc{box-sizing:border-box;border-radius:0;-webkit-border-radius:0}.tsp{position:relative}.tsp-i{width:100%;box-sizing:border-box;margin:0 0 0 5px;font-size:1em}.tsp-r{position:absolute;z-index:100;background:var(--c_frm);border:1px solid var(--c_bg);border-radius:.3rem;width:100%;max-height:160px;overflow-y:auto;list-style:none;margin:2px 0 0;padding:0;display:none}.tsp-r.open{display:block}.tsp-r li{padding:4px 6px;cursor:pointer;font-size:.9em}.tsp-r li:hover,.tsp-r li.active{background:var(--c_btn);color:var(--c_btntxt)}.tsp-r li.nr,.tsp-r li.nr:hover{background:0 0;color:var(--c_tab);cursor:default}body[data-auth=unauthed] #team-config-section,body[data-auth=pending] #team-config-section,body[data-auth=expired-refresh] #team-config-section,body[data-auth=expired-reauth] #team-config-section{opacity:.5;pointer-events:none}body[data-auth=unauthed] #team-config-section .tcb,body[data-auth=pending] #team-config-section .tcb,body[data-auth=expired-refresh] #team-config-section .tcb,body[data-auth=expired-reauth] #team-config-section .tcb{background:var(--c_btnoff)!important;opacity:.6}body[data-auth=unauthed] #team-config-section input[type=radio],body[data-auth=unauthed] #team-config-section input[type=checkbox],body[data-auth=pending] #team-config-section input[type=radio],body[data-auth=pending] #team-config-section input[type=checkbox],body[data-auth=expired-refresh] #team-config-section input[type=radio],body[data-auth=expired-refresh] #team-config-section input[type=checkbox],body[data-auth=expired-reauth] #team-config-section input[type=radio],body[data-auth=expired-reauth] #team-config-section input[type=checkbox]{accent-color:var(--c_btnoff)}body[data-saving] button[name=apply-btn]{opacity:.6;pointer-events:none}.tc[data-loading] .tsp-i{opacity:.7}[data-show]{display:none!important}body[data-auth=pending] [data-show~=pending],body[data-auth=authed] [data-show~=authed],body[data-auth=expired-refresh] [data-show~=expired-refresh],body[data-auth=expired-reauth] [data-show~=expired-reauth],body[data-auth=unauthed] [data-show~=unauthed]{display:revert!important}body[data-auth=pending] .oab[data-show~=pending],body[data-auth=authed] .oab[data-show~=authed],body[data-auth=expired-refresh] .oab[data-show~=expired-refresh],body[data-auth=expired-reauth] .oab[data-show~=expired-reauth],body[data-auth=unauthed] .oab[data-show~=unauthed]{display:inline-block!important}#account-section>fieldset>div[data-show~=authed]{padding:5px}#account-info-slot{padding:0 0 0 5px}#account-info-authed-slot{padding:0}body[data-auth=expired-refresh] #account-status-message,body[data-auth=expired-reauth] #account-status-message{color:var(--c_tab);font-size:.9em}body[data-auth=expired-refresh] #account-status,body[data-auth=expired-reauth] #account-status{margin-bottom:7px!important}#account-error{display:none}#account-error.show{display:block}</style>
+<template id=ct>
+<div class=tc>
+<div class=tch>
+<div style=display:flex;align-items:center;gap:4px>
+<div class=tct></div>
+<div class=tcc>
+<button type=button class=tcb data-act=up title="Move Up">↑</button>
+<button type=button class=tcb data-act=down title="Move Down">↓</button>
+</div>
+</div>
+<div>
+<button type=button class="tcb rm" data-act=remove title=Remove>×</button>
+</div>
+</div>
+<div class=row><div class=tcl>League</div>
+<select class=tci data-f=league><option>Loading…</select>
+</div>
+<div class=row><div class=tcl>Team</div>
+<div class="tsp tci">
+<input class=tsp-i placeholder=Search… autocomplete=off data-f=search>
+<ul class=tsp-r data-f=results></ul>
+</div>
+</div>
+<div class=row><div class=tcl>Color</div>
+<div class="tci cog">
+<div class=cor>
+<label><input type=radio data-f=opt-primary value=primary checked>Primary</label>
+<label><input type=radio data-f=opt-alternate value=alternate>Alternate</label>
+</div>
+<div class=ccr>
+<label><input type=radio data-f=opt-custom value=custom>Custom</label>
+<input class=cc type=color data-f=color>
+</div>
+</div>
+</div>
+</div>
+</template>
+<div id=account-section>
+<fieldset><legend><b>Account</b></legend>
+<div id=account-info-slot>
+<p id=account-email-row data-show="authed expired-refresh expired-reauth"><b>Email:</b> <span id=account-email></span>
+<p id=account-subscription-row data-show="authed expired-refresh expired-reauth"><b>Plan:</b> <span id=account-subscription>Basic</span>
+</div>
+<p id=account-status data-show="pending expired-refresh expired-reauth" style=padding-left:5px;margin-bottom:2px><span id=account-status-message></span></p>
+<div data-show=pending style=padding-top:0>
+<p><a id=login-verification-url href=# target=_blank style=word-break:break-all></a>
+<p style=margin-top:20px><b>User Code:</b> <code id=login-user-code></code>
+</div>
+<p id=login-polling-status data-show=pending style=opacity:.8;font-size:.9em;padding-left:5px><span id=login-polling-message></span></p>
+<div data-show=authed>
+<div id=account-info-authed-slot></div>
+<p style=color:var(--c_tab);font-size:.9em;margin-top:2px;margin-bottom:12px><span id=account-token-expiry></span></p>
+<form action=/tl method=post class=oab style=display:inline-block>
+<input type=hidden name=oa-action value=clear_all><button class=button>Log Out</button>
+</form>
+</div>
+<p data-show=unauthed style=padding-left:5px;margin-bottom:10px>Log in to configure teams</p>
+<div id=account-error class=ec><b>Error:</b> <span id=account-error-message></span></div>
+<div id=account-actions>
+<form action=/tl method=post class=oab style=margin-right:10px data-show="unauthed expired-reauth">
+<input type=hidden name=oa-action value=initiate><button>Log In</button>
+</form>
+<form action=/tl method=post class=oab style=margin-right:10px data-show=pending>
+<input type=hidden name=oa-action value=complete><button>Continue</button>
+</form>
+<form action=/tl method=post class=oab style=margin-right:10px data-show=pending>
+<input type=hidden name=oa-action value=clear_pending><button>Cancel</button>
+</form>
+<form action=/tl method=post class=oab style=margin-right:10px data-show=expired-refresh>
+<input type=hidden name=oa-action value=refresh><button>Reconnect</button>
+</form>
+<form action=/tl method=post class=oab style=margin-right:10px data-show="expired-refresh expired-reauth">
+<input type=hidden name=oa-action value=clear_all><button class=button>Log Out</button>
+</form>
+</div>
+</fieldset>
+</div>
+<form id=config-form action=/tl method=post>
+<input type=hidden name=update-config value=true>
+<input type=hidden name=team-configs id=hf-tc>
+<input type=hidden name=light-restore id=hf-lr>
+<input type=hidden name=turn-on-light id=hf-tl>
+<input type=hidden name=animation-type id=hf-at>
+<div id=team-config-section>
+<fieldset><legend><b>Teams</b></legend>
+<div id=team-cards style="margin:0 5px"></div>
+<button type=button id=add-team-btn class=button style="margin:5px auto 15px;width:80%;display:block">+ Add Team</button>
+</fieldset>
+</div>
+<div id=system-section>
+<fieldset><legend><b>Settings</b></legend>
+<div class=st>
+<div class=srow><span class=sl>Light Restore Time</span><span class=si>
+<input type=number id=light-restore-hrs min=0 max=24 value=0 style=width:46px required>hr
+<input type=number id=light-restore-min min=0 max=59 value=0 style=width:46px required>min
+</span></div>
+<div class=srow><span class=sl>Animation</span><span class=si>
+<select id=animation-type><option value=breathe>Breathe<option value=comet>Comet<option value=crenel>Crenel</select>
+</span></div>
+<div class=srow><span class=sl>Turn on light</span><span class=si>
+<input type=checkbox id=turn-on-light>
+</span></div>
+</div>
+</fieldset>
+<button name=apply-btn class="button bgrn" style=margin-top:20px>Save</button>
+</div>
+</form>
+<p></p>
+<script>(()=>{const t={auth:"unauthed",loadingCards:new Set,saving:!1},e=e=>document.getElementById(e),F=document.body,n=e("team-cards"),w=e("add-team-btn"),B=document.querySelector("button[name=apply-btn]");function z(e){return e.oa_vuc&&e.oa_uc?"pending":e.oa_has_at?e.is_token_valid?"authed":e.oa_rt?"expired-refresh":"expired-reauth":"unauthed"}function o(){F.dataset.auth=t.auth,F.toggleAttribute("data-saving",t.saving);for(const e of n.children)e.toggleAttribute("data-loading",t.loadingCards.has(e));B.disabled=t.saving||t.loadingCards.size>0,w.disabled=t.auth!=="authed"||n.children.length>=4,w.textContent=t.auth!=="authed"?"Log in to Add Team":n.children.length>=4?"+ Add Team (Max 4)":"+ Add Team",[...n.children].forEach((e,t,n)=>{e._f.title.textContent="Team "+(t+1),e._f.up.disabled=t===0,e._f.down.disabled=t===n.length-1})}function g(e){if(!e)return"N/A";const t=new Date(e*1e3),s=t.toLocaleDateString(0[0],{month:"numeric",day:"numeric",year:"2-digit"}),o=t.toLocaleTimeString(0[0],{hour:"numeric",minute:"2-digit",hour12:!0}),n=t.toLocaleTimeString(0[0],{timeZoneName:"short"}).split(" ").pop()||"";return`${s} ${o}${n?` ${n}`:""}`}function C(){t.auth=z(oauth);const n=e("account-email-row"),s=e("account-subscription-row"),a=e("account-info-slot"),r=e("account-info-authed-slot");t.auth==="authed"?(r.appendChild(n),r.appendChild(s)):(a.appendChild(n),a.appendChild(s));const l=e("account-error"),c=oauth.oa_err&&!oauth.oa_err.includes("authorization_pending");if(l.classList.toggle("show",!!c),c&&(e("account-error-message").textContent=oauth.oa_err),oauth.oa_email&&(e("account-email").textContent=oauth.oa_email),t.auth==="pending"){e("account-status-message").textContent="Open the URL below to sign in.",e("login-user-code").textContent=oauth.oa_uc;const t=e("login-verification-url");t.href=oauth.oa_vuc,t.textContent=oauth.oa_vuc,p()}else if(t.auth==="authed")m(),i.reset(),e("account-token-expiry").textContent=`Access Token valid until ${g(oauth.oa_ate)}`;else if(t.auth==="expired-refresh"||t.auth==="expired-reauth"){m(),i.reset();const n=t.auth==="expired-refresh"?`Access Token expired ${g(oauth.oa_ate)}`:`Access token expired ${g(oauth.oa_ate)} and no refresh token.`;e("account-status-message").textContent=n}else m(),i.reset();o()}let f=null,u=null,x=0;const v=12,i={get:()=>parseInt(sessionStorage.getItem("oauth_poll_count")||"0",10),increment:()=>{const e=i.get()+1;return sessionStorage.setItem("oauth_poll_count",e),e},reset:()=>sessionStorage.removeItem("oauth_poll_count")};function M(){const t=Math.max(0,Math.ceil((x-Date.now())/1e3)),n=i.get();e("login-polling-message").textContent=t>0?`Auto checking for sign-in in ${t}s…`:`Auto checking for sign-in… (${n}/${v})`}function p(){if(m(),i.get()>=v){e("login-polling-message").textContent=`Once signed in, tap "Continue".`;return}const t=(oauth.oa_pi||5)*1e3;x=Date.now()+t,u=setInterval(M,1e3),M(),f=setTimeout(()=>{if(document.hidden){p();return}const t=i.increment();e("login-polling-message").textContent=`Auto-refreshing to check for completed login… (${t}/${v})`,fetch("/tl",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"poll-oauth=true"}).then(e=>e.json()).then(e=>{oauth=e,C()}).catch(()=>{e("login-polling-message").textContent="Error checking login status. Retrying…",p()})},t)}function m(){f&&(clearTimeout(f),f=null),u&&(clearInterval(u),u=null)}let l=null;async function S(){if(l)return l;const e=await fetch("/tl",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"get-token=1"});if(!e.ok)return null;const t=await e.json();return l=t.oa_at||null}async function h(e,t={}){let n=await S();if(!n)throw new Error("No access token");const o=n=>fetch(e,{...t,headers:{...t.headers||{},Authorization:`Bearer ${n}`}});let s=await o(n);if(s.status===401){if(l=null,n=await S(),!n)return s;s=await o(n)}return s}let r=null,a=null;const s={},c={},N=40,E=()=>t.auth==="authed";function q(){return r?Promise.resolve(r):a?a:E()?a=h(`${apiUrl}/leagues`).then(e=>{if(!e.ok)throw new Error("HTTP "+e.status);return e.json()}).then(e=>(r=e,a=null,e)).catch(e=>(console.error("leagues:",e),a=null,[])):Promise.resolve([])}function A(e){return s[e]?Promise.resolve(s[e]):c[e]?c[e]:E()?c[e]=h(`${apiUrl}/teams?league=${encodeURIComponent(e)}`).then(e=>{if(!e.ok)throw new Error("HTTP "+e.status);return e.json()}).then(t=>(t.forEach(j),s[e]=t,delete c[e],t)).catch(t=>(console.error("teams:",t),delete c[e],[])):Promise.resolve([])}function j(e){e.color&&!e.color.startsWith("#")&&(e.color="#"+e.color),e.alternateColor&&!e.alternateColor.startsWith("#")&&(e.alternateColor="#"+e.alternateColor)}function d(e){if(!r)return!1;const t=r.find(t=>t.id===e);return t&&t.teamCount!=null&&t.teamCount>N}const U=e("ct"),y=new WeakMap;function H(e){const t=U.content.firstElementChild.cloneNode(!0),n={title:t.querySelector(".tct"),up:t.querySelector("[data-act=up]"),down:t.querySelector("[data-act=down]"),remove:t.querySelector("[data-act=remove]"),league:t.querySelector("[data-f=league]"),search:t.querySelector("[data-f=search]"),results:t.querySelector("[data-f=results]"),color:t.querySelector("[data-f=color]"),optPrimary:t.querySelector("[data-f=opt-primary]"),optAlternate:t.querySelector("[data-f=opt-alternate]"),optCustom:t.querySelector("[data-f=opt-custom]")};t._f=n,t._team=null,t._saved=e;const s="co_"+ ++D;return[n.optPrimary,n.optAlternate,n.optCustom].forEach(e=>e.name=s),n.search.value=e.teamName||"",n.color.value=e.selectedColor||"#000000",t}let D=0;async function T(e){const t=e._saved.league||"nba",s=await q(),n=e._f.league;if(n.innerHTML="",s.length===0)n.appendChild(new Option(t.toUpperCase(),t,!0,!0));else for(const e of s){const o=new Option(e.displayName,e.id,e.id===t,e.id===t);n.appendChild(o)}await L(e,t,e._saved.teamSlug||"")}async function L(e,n,s){if(!s)return;t.loadingCards.add(e),o(),e._f.search.placeholder="Loading…";try{let t;if(d(n)){const e=await h(`${apiUrl}/teams?slug=${encodeURIComponent(s)}`);e.ok&&(t=await e.json(),j(t))}else{const e=await A(n);t=e.find(e=>e.slug===s)}t&&b(e,t,!1)}finally{t.loadingCards.delete(e),e._f.search.placeholder="Search…",o()}}function R(e,t){const n=e._f;e._team=t,n.search.value=t.displayName||"",n.results.classList.remove("open")}function P(e,t,n){const s=e._f;if(!n){s.color.value=t.color||"#000000",s.optPrimary.checked=!0;return}const i=s.color.value.toLowerCase(),r=(t.color||"#000000").toLowerCase(),a=(t.alternateColor||"#000000").toLowerCase();let o="primary";i===a&&a!=="#000000"?o="alternate":i!==r&&i!==a&&(o="custom"),s.optPrimary.checked=o==="primary",s.optAlternate.checked=o==="alternate",s.optCustom.checked=o==="custom"}function b(e,t,n){R(e,t),P(e,t,!n)}function I(e){const t=e._f;e._team=null,t.search.value="",t.results.classList.remove("open"),t.color.value="#000000"}function _(e,t){const n=e._f.results;if(n.innerHTML="",t.length===0){const e=document.createElement("li");e.className="nr",e.textContent="No teams found",n.appendChild(e)}else for(const s of t){const e=document.createElement("li");e.textContent=s.displayName,e._team=s,n.appendChild(e)}n.classList.add("open")}function V(e){const t=e._f,n=t.search.value.trim(),o=t.league.value;if(clearTimeout(y.get(e)),!n){t.results.classList.remove("open");return}if(!d(o)&&s[o]){const t=n.toLowerCase();_(e,s[o].filter(e=>e.displayName&&e.displayName.toLowerCase().includes(t)||e.shortDisplayName&&e.shortDisplayName.toLowerCase().includes(t)||e.location&&e.location.toLowerCase().includes(t)))}else y.set(e,setTimeout(async()=>{try{const s=await h(`${apiUrl}/teams?league=${encodeURIComponent(o)}&search=${encodeURIComponent(n)}`);if(!s.ok)throw new Error("HTTP "+s.status);const i=await s.json();if(t.search.value.trim()!==n)return;i.forEach(j),_(e,i)}catch(e){console.error("search:",e)}},300))}function $(e){const t=e._f;e._team?t.search.select():!d(t.league.value)&&s[t.league.value]&&_(e,s[t.league.value])}function W(e,t){const i=t._f.results;if(e.key==="Escape"){i.classList.remove("open");return}const n=[...i.querySelectorAll("li:not(.nr)")];if(!n.length)return;const s=i.querySelector("li.active");let o=n.indexOf(s);if(e.key==="ArrowDown"||e.key==="ArrowUp")e.preventDefault(),s&&s.classList.remove("active"),o=(o+(e.key==="ArrowDown"?1:n.length-1))%n.length,n[o].classList.add("active"),n[o].scrollIntoView({block:"nearest"});else if(e.key==="Enter"){e.preventDefault();const o=s||n[0];o&&o._team&&b(t,o._team,!0)}}function O(e={}){if(n.children.length>=4)return;const t=H(e);n.appendChild(t),T(t),o()}function K(e){clearTimeout(y.get(e)),e.remove(),o()}function k(e,t){const s=[...n.children],a=s.indexOf(e),i=a+t;if(i<0||i>=s.length)return;t===-1?n.insertBefore(e,s[i]):n.insertBefore(e,s[i].nextSibling),o()}n.addEventListener("click",e=>{const t=e.target.closest(".tc");if(!t)return;const n=e.target.dataset.act;n==="up"?k(t,-1):n==="down"?k(t,1):n==="remove"&&K(t)}),n.addEventListener("change",e=>{const t=e.target.closest(".tc");if(!t)return;const n=e.target.dataset.f;if(n==="league")I(t),d(t._f.league.value)||A(t._f.league.value);else if(n==="color")t._f.optCustom.checked=!0;else if(n&&n.startsWith("opt-")&&t._team){const n=e.target.value;n==="primary"?t._f.color.value=t._team.color||"#000000":n==="alternate"&&(t._f.color.value=t._team.alternateColor||"#000000")}}),n.addEventListener("input",e=>{const t=e.target.closest(".tc");if(!t)return;e.target.dataset.f==="search"&&V(t)}),n.addEventListener("focusin",e=>{const t=e.target.closest(".tc");if(!t)return;e.target.dataset.f==="search"&&$(t)}),n.addEventListener("keydown",e=>{const t=e.target.closest(".tc");if(!t)return;e.target.dataset.f==="search"&&W(e,t)}),n.addEventListener("mousedown",e=>{const t=e.target.closest(".tsp-r li");if(!t||!t._team)return;const n=e.target.closest(".tc");if(!n)return;e.preventDefault(),b(n,t._team,!0)}),document.addEventListener("click",e=>{e.target.closest(".tsp")||document.querySelectorAll(".tsp-r.open").forEach(e=>e.classList.remove("open"))}),document.addEventListener("DOMContentLoaded",()=>{C();const s=conf.teamConfigs;s&&s.length?s.forEach(e=>O(e)):O({});const i=conf.lightRestoreMins??60,a=e("light-restore-hrs"),r=e("light-restore-min"),c=e("turn-on-light"),l=e("animation-type");a.value=Math.floor(i/60),r.value=i%60,c.checked=!!conf.turnOnLight,l.value=conf.animationType??"breathe",w.addEventListener("click",()=>O({})),document.getElementById("config-form").addEventListener("submit",s=>{const i=s.currentTarget;if(!i.checkValidity()){s.preventDefault(),i.reportValidity();return}const d=[];for(const t of n.children){const o=t._f,e=t._team,s=t._saved||{},i=e?e.slug:s.teamSlug||"";if(!i)continue;d.push({league:o.league.value,teamSlug:i,teamAbbrev:e?e.abbreviation||"":s.teamAbbrev||"",teamName:e?e.displayName||"":s.teamName||"",selectedColor:o.color.value})}e("hf-tc").value=JSON.stringify(d);const u=parseInt(a.value)||0,h=parseInt(r.value)||0;e("hf-lr").value=Math.min(1440,Math.max(1,u*60+h)),e("hf-tl").value=c.checked?"true":"false",e("hf-at").value=l.value,t.saving=!0,o()})})})()</script>

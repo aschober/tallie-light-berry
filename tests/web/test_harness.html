@@ -1,0 +1,272 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TallieLight UI — Test Harness</title>
+<!--
+  Self-contained local dev harness. Built by tests/web/build_test_page.sh
+  from tallielight_ui.html and tasmota_style.html. Open tallielight_ui_test.html
+  directly in any browser via file://.
+
+  Re-run build_test_page.sh after changing the UI or the Tasmota CSS.
+  This file is the harness shell — edit it to change the test panel or mock data.
+
+  Placeholders substituted at build time:
+    TASMOTA_STYLE placeholder  →  contents of tasmota_style.html (<style>…</style>)
+    UI_BODY placeholder        →  contents of tallielight_ui.html
+-->
+__TASMOTA_STYLE__
+<style>
+  /* Tasmota wraps the page in:
+       <body style="text-align:center; background:var(--c_bg);">  (from base CSS)
+         <div style="background:var(--c_bg); text-align:left; display:inline-block;
+                     color:var(--c_txt); min-width:340px; position:relative;">
+           <h3>Tallie Light</h3><h2>Lampy</h2>
+           …injected conf/oauth + our HTML…
+         </div>
+       </body>
+     The inline-block wrapper sizes to content (no fixed width), enforces
+     min-width:340px so narrow viewports cause horizontal scroll instead of
+     squishing, and provides the position:relative containing block for
+     .tsp-r absolute-positioned dropdowns. We mirror that here. */
+  /* Keep native body spacing like Tasmota pages (no forced reset). */
+  #tasmota-wrap {
+    background: var(--c_bg);
+    color: var(--c_txt);
+    text-align: left;
+    display: inline-block;
+    min-width: 340px;
+    position: relative;
+  }
+  #harness {
+    position: fixed; bottom: 8px; right: 8px; z-index: 9999;
+    background: #111; color: #eee; padding: 8px 10px;
+    border: 1px solid #444; border-radius: 4px;
+    font: 12px/1.4 verdana, sans-serif; min-width: 220px;
+  }
+  #harness h4 { margin: 0 0 4px; font-size: 12px; }
+  #harness label { display: block; margin: 2px 0; cursor: pointer; }
+  #harness input[type=radio] { width: auto; margin-right: 4px; }
+  #harness button {
+    background: #1fa3ec; color: #fff; border: 0; border-radius: 3px;
+    padding: 2px 6px; cursor: pointer; font-size: 11px; margin-top: 6px;
+    width: auto; line-height: 1.4;
+  }
+  #harness .row { display: flex; gap: 6px; align-items: center; }
+  #harness select { width: auto; padding: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ===================== TEST HARNESS PANEL ===================== -->
+<!-- Fixed overlay in the corner — lets you switch auth state and team count
+     without reloading from a server. State is persisted in sessionStorage. -->
+<div id="harness">
+  <h4>UI Test Harness</h4>
+  <label><input type="radio" name="auth-state" value="unauthed">unauthed</label>
+  <label><input type="radio" name="auth-state" value="pending">pending</label>
+  <label><input type="radio" name="auth-state" value="authed" checked>authed</label>
+  <label><input type="radio" name="auth-state" value="expired-refresh">expired (refreshable)</label>
+  <label><input type="radio" name="auth-state" value="expired-reauth">expired (re-auth)</label>
+  <label><input type="radio" name="auth-state" value="loading">loading</label>
+  <label style="margin-top:4px"><input type="checkbox" id="harness-error">show error</label>
+  <div class="row" style="margin-top:6px">
+    <span>Teams:</span>
+    <select id="harness-teams">
+      <option value="0">0</option>
+      <option value="1" selected>1</option>
+      <option value="2">2</option>
+      <option value="4">4</option>
+    </select>
+  </div>
+  <div class="row" style="margin-top:4px">
+    <span>Theme:</span>
+    <select id="harness-theme">
+      <option value="dark">dark</option>
+      <option value="light">light</option>
+      <option value="halloween">halloween</option>
+      <option value="navy">navy</option>
+      <option value="purple-rain">purple rain</option>
+      <option value="solarized">solarized</option>
+    </select>
+  </div>
+  <button id="harness-reload">Reload</button>
+</div>
+
+<script>
+  // ---------- Harness state (persisted across reloads) ----------
+  const HS = {
+    get: () => { try { return JSON.parse(sessionStorage.getItem('hs') || '{}'); } catch { return {}; } },
+    set: v => sessionStorage.setItem('hs', JSON.stringify(v)),
+  };
+
+  // ---------- Mock data ----------
+  // Mirrors the teamConfigs shape Berry injects via window.conf.teamConfigs.
+  const teamsByCount = {
+    0: [],
+    1: [{league:"nba", selectedColor:"#ce1141", teamSlug:"basketball-nba-rockets", teamAbbrev:"HOU", teamName:"Houston Rockets"}],
+    2: [
+      {league:"nba", selectedColor:"#ce1141", teamSlug:"basketball-nba-rockets", teamAbbrev:"HOU", teamName:"Houston Rockets"},
+      {league:"nba", selectedColor:"#1d428a", teamSlug:"basketball-nba-knicks", teamAbbrev:"NY", teamName:"New York Knicks"},
+    ],
+    4: [
+      {league:"mlb", selectedColor:"#002d72", teamSlug:"baseball-mlb-mets", teamAbbrev:"NYM", teamName:"New York Mets"},
+      {league:"nba", selectedColor:"#1d428a", teamSlug:"basketball-nba-warriors", teamAbbrev:"GSW", teamName:"Golden State Warriors"},
+      {league:"nfl", selectedColor:"#125740", teamSlug:"football-nfl-jets", teamAbbrev:"NYJ", teamName:"New York Jets"},
+      {league:"nhl", selectedColor:"#cf0a2c", teamSlug:"hockey-nhl-rangers", teamAbbrev:"NYR", teamName:"New York Rangers"},
+    ],
+  };
+
+  // Build the oauth object Berry would inject for each harness auth state.
+  function buildOauth(state) {
+    const base = { oa_email: "test@test.com", oa_pi: 5 };
+    if (state === 'unauthed')      return { ...base, oa_email: null };
+    if (state === 'pending')       return { ...base, oa_uc: "ABCD1234", oa_vuc: "https://auth.example.com/oauth2/device/activate?user_code=ABCD1234", oa_pi: 5 };
+    if (state === 'authed')        return { ...base, oa_has_at: true, is_token_valid: true,  oa_ate: Math.floor(Date.now()/1000) + 3600, oa_rt: "rt" };
+    if (state === 'expired-refresh') return { ...base, oa_has_at: true, is_token_valid: false, oa_ate: Math.floor(Date.now()/1000) - 3600, oa_rt: "rt" };
+    if (state === 'expired-reauth')  return { ...base, oa_has_at: true, is_token_valid: false, oa_ate: Math.floor(Date.now()/1000) - 3600 };
+    if (state === 'loading')         return { ...base, oa_has_at: true, is_token_valid: true,  oa_ate: Math.floor(Date.now()/1000) + 3600, oa_rt: "rt" };
+    return base;
+  }
+
+  // ---------- Theme definitions ----------
+  // WebColor array index → CSS variable mapping (Tasmota authoritative order).
+  // Tasmota WebColor array index → CSS variable.
+  // Order verified from HTTP_HEAD_STYLE_ROOT_COLOR.h in Tasmota source.
+  const THEME_VARS = ['--c_bg','--c_frm','--c_ttl','--c_txt','--c_txtwrn','--c_txtscc',
+    '--c_btn','--c_btnoff','--c_btntxt','--c_btnhvr','--c_btnrst','--c_btnrsthvr',
+    '--c_btnsv','--c_btnsvhvr','--c_in','--c_intxt','--c_csl','--c_csltxt','--c_tab','--c_tabtxt'];
+  // Theme arrays built from tasmota_style.html ground-truth values (Dark) and
+  // docs WebColor strings re-mapped to match the CSS variable order above.
+  const THEMES = {
+    dark:         ['#252525','#4f4f4f','#eaeaea','#eaeaea','#ff5661','#008000','#1fa3ec','#08405e','#faffff','#0e70a4','#d43535','#931f1f','#47c266','#5aaf6f','#dddddd','#000000','#1f1f1f','#65c115','#999999','#faffff'],
+    light:        ['#ffffff','#f2f2f2','#000000','#000000','#ff0000','#008000','#1fa3ec','#a1d9f7','#ffffff','#0e70a4','#d43535','#931f1f','#47c266','#5aaf6f','#ffffff','#000000','#ffffff','#000000','#999999','#000000'],
+    halloween:    ['#2f3133','#3d3f41','#dddddd','#cccccc','#ff5661','#008000','#ec7600','#663300','#ffffff','#bf5f00','#d43535','#931f1f','#47c266','#5aaf6f','#293134','#ffb000','#293134','#ffb000','#bc4d90','#ffffff'],
+    navy:         ['#000033','#4f4f4f','#e0e0c0','#e0e0c0','#ff0000','#a7f432','#1fa3ec','#08405e','#ffffff','#0e70a4','#d43535','#931f1f','#47c266','#5aaf6f','#dddddd','#000000','#1e1e1e','#a7f432','#eedd77','#000033'],
+    'purple-rain':['#252525','#282531','#eaeaea','#eaeaea','#282531','#d7ccff','#694fa8','#2a2244','#faffff','#4d3e7f','#b73d5d','#822c43','#1f917c','#156353','#1d1b26','#eaeaea','#716b7f','#d7ccff','#eaeaea','#2a2244'],
+    solarized:    ['#002b36','#073642','#839496','#839496','#b58900','#859900','#268bd2','#0f3957','#eee8d5','#185886','#dc322f','#90211f','#859900','#647300','#073642','#839496','#073642','#839496','#839496','#002b36'],
+  };
+
+  function applyTheme(name) {
+    const colors = THEMES[name] || THEMES.default;
+    const root = document.documentElement.style;
+    THEME_VARS.forEach((v, i) => root.setProperty(v, colors[i]));
+  }
+
+  // ---------- Restore harness panel to saved state ----------
+  const saved = HS.get();
+  const knownStates = ['unauthed','pending','authed','expired-refresh','expired-reauth','loading'];
+  const initState = knownStates.includes(saved.state) ? saved.state : 'authed';
+  const initTeams = saved.teams != null ? saved.teams : 2;
+  const initError = !!saved.error;
+  const initTheme = Object.keys(THEMES).includes(saved.theme) ? saved.theme : 'dark';
+
+  document.querySelector(`input[name=auth-state][value="${initState}"]`).checked = true;
+  document.getElementById('harness-teams').value = String(initTeams);
+  document.getElementById('harness-error').checked = initError;
+  document.getElementById('harness-theme').value = initTheme;
+  applyTheme(initTheme);
+
+  // ---------- Inject globals that Berry would provide in production ----------
+  window.conf = {
+    teamConfigs: teamsByCount[initTeams],
+    lightRestoreMins: 120,
+    turnOnLight: true,
+    animationType: "crenel",
+  };
+  const baseOauth = buildOauth(initState);
+  // oa_err can appear alongside any auth state — simulate a Berry-reported OAuth error.
+  if (initError) baseOauth.oa_err = 'access_denied: the user denied the authorization request';
+  window.oauth = baseOauth;
+  window.apiUrl = "http://localhost:3000/v1";
+
+  // ---------- Stub fetch ----------
+  // Intercepts /sl (Tasmota Berry endpoint) and /v1 (TallieLight Node API).
+  // Unmatched URLs fall through to the real fetch so external resources load normally.
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (url, init) => {
+    const u = String(url);
+    if (initState === 'loading' && (u.includes('/leagues') || u.includes('/teams'))) return new Promise(() => {});
+    if (u.endsWith('/tl') || u === '/tl' || u.startsWith('/tl?')) {
+      const body = (init && init.body) || '';
+      if (body.includes('get-token'))  return jsonResp({ oa_at: 'fake-jwt' });
+      if (body.includes('poll-oauth')) return jsonResp(window.oauth);
+      return jsonResp({});
+    }
+    if (u.includes('/leagues')) return jsonResp([
+      { id: 'mlb',   displayName: 'MLB',           teamCount: 30  },
+      { id: 'nba',   displayName: 'NBA',           teamCount: 30  },
+      { id: 'nfl',   displayName: 'NFL',           teamCount: 32  },
+      { id: 'nhl',   displayName: 'NHL',           teamCount: 32  },
+      { id: 'ncaaf', displayName: 'NCAA Football', teamCount: 134 },
+    ]);
+    if (u.includes('/teams')) {
+      const m = u.match(/slug=([^&]+)/);
+      if (m) {
+        const slug = decodeURIComponent(m[1]);
+        const t = Object.values(teamsByCount).flat().find(x => x.teamSlug === slug);
+        return jsonResp(t ? mockTeam(t) : null);
+      }
+      const lm = u.match(/league=([^&]+)/);
+      const league = lm ? decodeURIComponent(lm[1]) : 'mlb';
+      return jsonResp(teamsByCount[2].filter(t => t.league === league).map(mockTeam).concat([
+        mockTeam({league, teamSlug:`${league}-team-a`, teamAbbrev:'AAA', teamName:`Sample ${league.toUpperCase()} A`, selectedColor:'#ff0000'}),
+        mockTeam({league, teamSlug:`${league}-team-b`, teamAbbrev:'BBB', teamName:`Sample ${league.toUpperCase()} B`, selectedColor:'#00ff00'}),
+      ]));
+    }
+    return realFetch(url, init);
+  };
+  function jsonResp(d) { return { ok: true, status: 200, json: async () => d }; }
+  function mockTeam(c) {
+    return {
+      slug: c.teamSlug, displayName: c.teamName, shortDisplayName: c.teamAbbrev,
+      abbreviation: c.teamAbbrev, location: c.teamName.split(' ')[0],
+      color: (c.selectedColor || '#000000').replace('#',''),
+      alternateColor: 'ffffff',
+    };
+  }
+
+  // ---------- Harness panel event wiring ----------
+  function hsSave() {
+    return {
+      state: document.querySelector('input[name=auth-state]:checked').value,
+      teams: parseInt(document.getElementById('harness-teams').value, 10),
+      error: document.getElementById('harness-error').checked,
+      theme: document.getElementById('harness-theme').value,
+    };
+  }
+
+  document.querySelectorAll('input[name=auth-state]').forEach(r => {
+    r.addEventListener('change', () => { HS.set(hsSave()); location.reload(); });
+  });
+  document.getElementById('harness-teams').addEventListener('change', () => {
+    HS.set(hsSave()); location.reload();
+  });
+  document.getElementById('harness-error').addEventListener('change', () => {
+    HS.set(hsSave()); location.reload();
+  });
+  document.getElementById('harness-theme').addEventListener('change', e => {
+    applyTheme(e.target.value); HS.set(hsSave());
+  });
+  document.getElementById('harness-reload').addEventListener('click', () => location.reload());
+</script>
+
+<!-- ===================== TASMOTA WRAPPER + INLINED UI ===================== -->
+<!-- Mirrors the inline-block div Tasmota renders around injected page content.
+     max-width:390px matches the typical mobile-first Tasmota page width. -->
+<div id="tasmota-wrap" style="background:var(--c_bg);text-align:left;display:inline-block;color:var(--c_txt);min-width:340px;max-width:390px;position:relative;">
+  <div style="text-align:center;color:var(--c_ttl);">
+    <noscript>To use Tasmota, please enable JavaScript<br></noscript>
+    <h3>Tallie Light</h3>
+    <h2>Lampy</h2>
+  </div>
+__UI_BODY__
+  <div></div>
+  <p></p>
+  <form id="but2" style="display:block;" action="." method="get"><button name="">Main Menu</button></form>
+  <p></p>
+  <div style="text-align:right;font-size:11px;"><hr><a href="https://github.com/arendst/Tasmota" target="_blank" style="color:#aaa;">Tasmota 15.4.0.1 (tasmota32) by Theo Arends</a></div>
+</div>
+
+</body>
+</html>
