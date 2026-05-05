@@ -1,12 +1,12 @@
 # Tallie Light Berry
 
-Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry extension for ESP32 LED controllers. It watches live sports scores from the Tallie backend and drives an LED strip to celebrate when a tracked team is winning — flashing or animating in the team's color. When the event ends, the light is turned off, or a timer expires, it restores the light to its prior state.
+Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry app for ESP32 LED controllers. It watches live sports scores from the Tallie cloud and drives an LED strip to celebrate when a tracked team is winning — flashing or animating in the team's color. After the game ends, the light restores to its prior state once the user-selected timeout expires. Manually turning off the light also triggers a restore of light.
 
-The device authenticates with the Tallie backend using OAuth 2.0 Device Authorization Flow. Once authorized, the backend provisions MQTT credentials and a set of topic subscriptions for the teams the user has configured. Game updates arrive over MQTT and are processed entirely on-device.
+The device authenticates with the Tallie cloud using OAuth 2.0 Device Authorization Flow. Once authorized, the cloud provisions MQTT credentials and a set of topic subscriptions for each team the user has configured. Game updates arrive over MQTT and are processed entirely on-device.
 
 ## Hardware
 
-Tallie Light runs on any ESP32 with a connected LED strip. It was developed against the [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/5987), a compact ESP32-S3 board with a built-in NeoPixel driver. The Tasmota template for this board is:
+Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip. It was developed against the [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/5987), a compact ESP32-S3 board with a built-in NeoPixel driver. The Tasmota template for this board is:
 
 ```
 {"NAME":"Tallie Light","GPIO":[32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,640,0,0,608,0,0,0,0,0,0,0,0,0,1376,0,0,0,0,0,0,0],"FLAG":0,"BASE":1}
@@ -16,10 +16,10 @@ Any ESP32 running Tasmota with a NeoPixel-compatible LED strip should work with 
 
 ### Custom Tasmota firmware
 
-Tallie Light requires a custom Tasmota build. Standard Tasmota releases do not include all necessary features. Add the following to `user_config_override.h` before building:
+Tallie Light requires a custom Tasmota build to include the Berry MQTT client. Standard Tasmota releases do not include all necessary features. Add the following to `user_config_override.h` before building:
 
 ```cpp
-// Required: Berry MQTT client used for scoreboard event subscriptions
+// Required: Berry MQTT client used for Tallie event subscriptions
 #define USE_BERRY_MQTTCLIENT
 
 // Required: TLS support for MQTT over port 443 (AWS IoT)
@@ -47,7 +47,7 @@ The build script copies source files into a `build/` staging directory, minifies
   ```
   brew install tdewolff/tap/minify
   ```
-- Python 3 — used by the web UI test harness build script (`tests/web/build_test_page.py`)
+- Python 3 — used by the web UI test harness build script (`tests/web/build_test_page.py`) which generates a test HTML file to see changes off device.
 
 ### Environment config
 
@@ -73,18 +73,18 @@ export OAUTH_CLIENT_ID=...
 export BACKEND_URL=...
 ```
 
-`.env` files are gitignored. Do not commit credentials.
+`.env` files are gitignored. Do not commit config.
 
 ### Running a build
 
 ```bash
-./build_tapp.sh               # dev build, existing version
-./build_tapp.sh prod          # prod build, existing version
+./build_tapp.sh               # dev build, existing Berry extension version
+./build_tapp.sh prod          # prod build, existing Berry extension version
 ./build_tapp.sh 1.2.0         # dev build, update version to 1.2.0
 ./build_tapp.sh 1.2.0 prod    # prod build, update version to 1.2.0
 ```
 
-Output is written to `TallieLight-dev.tapp` or `TallieLight-prod.tapp` in the repo root. The `build/` staging directory is also left in place for inspection.
+Output is written to `TallieLight-dev.tapp` or `TallieLight-prod.tapp` in the repo root. The `build/` directory is also left in place for inspection after a build.
 
 ## Development
 

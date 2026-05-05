@@ -5,12 +5,11 @@
 #     There is no in-memory map. Long strings (access token JWT, refresh token,
 #     device code, verification URI) only enter the heap when they're actually
 #     needed (refresh cron tick, MQTT (re)connect, settings page render).
-#   - Three fields are cached on the instance because they're hit every refresh
-#     cron tick / every MQTT reconnect: user id, MQTT password, token expiry
+#   - Two fields are cached on the instance: user id and token expiry
 #
 #   Device flow (OAuth 2.0 RFC 8628):
 #     initiate → user logs in via verification URL → poll → tokens →
-#     register device with backend for MQTT password.
+#     announce OAuth=UPDATED (tallielight.be handles backend registration).
 #
 #   Returned by `import oauth`: a singleton service instance.
 #
@@ -22,7 +21,6 @@ oauth_module.init = def (m)
   class OAuthService
     var device_id              # cached device id — never changes after first boot
     var _cached_uid            # cached user id — used on every MQTT (re)connect
-    var _cached_mqtt_password  # cached MQTT password — used on every MQTT (re)connect
     var _cached_token_expiry   # cached token expiry — used on every is_authorized cron tick
     var _device_flow_state     # transient device-flow state (oa_uc/oa_vuc/oa_dc/oa_dce/oa_pi/oa_err) — in-memory only
 
@@ -35,14 +33,13 @@ oauth_module.init = def (m)
     # LAST_ERROR: "oa_err",
     # ACCESS_TOKEN: "oa_at",
     # ACCESS_TOKEN_EXPIRY: "oa_ate",
-    # MQTT_PASSWORD: "oa_mp",
     # USER_ID: "oa_uid",
     # USER_EMAIL: "oa_email",
     # REFRESH_TOKEN: "oa_rt"
 
     # All keys that get persisted. read_all_oauth_data() iterates this list to
     # build a fresh map for the UI (pending keys are merged separately).
-    static _PERSIST_KEYS = ["oa_at", "oa_ate", "oa_mp", "oa_uid", "oa_email", "oa_rt"]
+    static _PERSIST_KEYS = ["oa_at", "oa_ate", "oa_uid", "oa_email", "oa_rt"]
 
     # Pending device-flow keys held in _device_flow_state map (not persisted).
     static _DEVICE_FLOW_KEYS = ["oa_uc", "oa_vuc", "oa_dc", "oa_dce", "oa_pi", "oa_err"]
@@ -67,7 +64,6 @@ oauth_module.init = def (m)
 
       # Prime the in-memory oauth cache from persist
       self._cached_uid            = persist.find("oa_uid", nil)
-      self._cached_mqtt_password  = persist.find("oa_mp", nil)
       self._cached_token_expiry   = persist.find("oa_ate", nil)
       self._device_flow_state     = {}
 
@@ -127,9 +123,8 @@ oauth_module.init = def (m)
           end
           needs_save = true
           # Update the small in-memory cache for hot persist fields.
-          if   k == "oa_uid" self._cached_uid           = v
-          elif k == "oa_mp"  self._cached_mqtt_password = v
-          elif k == "oa_ate" self._cached_token_expiry  = v
+          if   k == "oa_uid" self._cached_uid          = v
+          elif k == "oa_ate" self._cached_token_expiry = v
           end
         end
       end
@@ -162,9 +157,8 @@ oauth_module.init = def (m)
       import persist
       for k : OAuthService._PERSIST_KEYS persist.remove(k) end
       persist.save()
-      self._cached_uid           = nil
-      self._cached_mqtt_password = nil
-      self._cached_token_expiry  = nil
+      self._cached_uid          = nil
+      self._cached_token_expiry = nil
       self._log("cleared all OAuth data")
     end
 
@@ -180,9 +174,9 @@ oauth_module.init = def (m)
     # the request. headers: optional list of [name, value]; defaults to
     # form-urlencoded.
     def _webclient_post(url, payload, log_header, headers)
-      self._log(format("%s _webclient_post pre-gc mem=%s",
-                       log_header, str(tasmota.memory())))
+      do var m = tasmota.memory() self._log(format("%s _webclient_post pre-start-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
       tasmota.gc()
+      do var m = tasmota.memory() self._log(format("%s _webclient_post post-start-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
       var wc = webclient()
       try
         wc.begin(url)
@@ -195,13 +189,17 @@ oauth_module.init = def (m)
         var body = wc.get_string()
         wc.close()
         wc = nil
+        do var m = tasmota.memory() self._log(format("%s _webclient_post pre-end-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
         tasmota.gc()
+        do var m = tasmota.memory() self._log(format("%s _webclient_post post-end-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
         return {"http_code": http_code, "response_body": body}
       except .. as e, msg
         self._log(format("%s HTTP request failed - %s: %s", log_header, e, msg))
         try wc.close() except .. end
         wc = nil
+        do var m = tasmota.memory() self._log(format("%s _webclient_post pre-end-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
         tasmota.gc()
+        do var m = tasmota.memory() self._log(format("%s _webclient_post post-end-gc heap_free: %s, frag: %s", log_header, m.find("heap_free", "?"), m.find("frag", "?"))) end
         return {"http_code": -1, "response_body": ""}
       end
     end
@@ -285,11 +283,11 @@ oauth_module.init = def (m)
 
         var new_exp = int(jwt_payload["exp"])
         self._set_many({
-          "oa_at":    parsed["access_token"],
-          "oa_ate":   new_exp,
-          "oa_uid":   jwt_payload["sub"],
-          "oa_email": jwt_payload["email"],
-          "oa_rt":    parsed["refresh_token"],
+          "oa_at":       parsed["access_token"],
+          "oa_ate":      new_exp,
+          "oa_uid":      jwt_payload["sub"],
+          "oa_email":    jwt_payload["email"],
+          "oa_rt":       parsed["refresh_token"],
           "oa_err":   nil
         })
         var ttl = new_exp - tasmota.rtc()["utc"]
@@ -405,15 +403,9 @@ oauth_module.init = def (m)
       return result
     end
 
-    # Run device registration off the request handler's thread, then announce
-    # success so the MQTT reconnect rule fires.
+    # Announce token update so the MQTT reconnect rule fires.
     def _register_and_announce()
       import json
-      var reg = self._register_device()
-      if !reg["success"]
-        self._log(format("device registration failed: %s", reg["message"]))
-        return
-      end
       tasmota.publish_result(json.dump({'OAuth': 'UPDATED'}), 'RESULT')
     end
 
@@ -461,57 +453,6 @@ oauth_module.init = def (m)
       # OAuth=UPDATED on success, which triggers the MQTT reconnect rule.
       tasmota.set_timer(0, /-> self._register_and_announce(), "oauth_register")
       return result
-    end
-
-    def _register_device()
-      import json
-      import tallielight_env
-      var log_header = "POST /devices/register"
-
-      var token = self._get_valid_access_token()
-      if token == nil
-        return {"success": false, "message": "No valid access token", "retry": false}
-      end
-
-      var url = tallielight_env.BACKEND_URL + "/devices/register"
-      var body = json.dump({"clientId": self.device_id})
-      var headers = [["Content-Type", "application/json"],
-                     ["Authorization", "Bearer " + token]]
-      token = nil   # collectable as soon as the request is in flight
-
-      var resp = self._webclient_post(url, body, log_header, headers)
-      var http_code = resp["http_code"]
-      var resp_body = resp["response_body"]
-
-      if http_code == 200
-        var parsed = nil
-        try parsed = json.load(resp_body) except .. end
-        if parsed != nil && classname(parsed) == "map" && parsed.contains("password")
-          self._set_many({"oa_mp": parsed["password"], "oa_err": nil})
-          self._log(format("%s device registered", log_header))
-          return {"success": true, "message": "OK", "retry": false}
-        end
-      end
-
-      if http_code == -1
-        var msg = resp_body != "" ? resp_body : "HTTP request failed"
-        return {"success": false, "message": msg, "retry": true}
-      end
-
-      var msg = format("HTTP %s", str(http_code))
-      try
-        var parsed = json.load(resp_body)
-        if parsed != nil && classname(parsed) == "map"
-          var err = parsed.find("error", nil)
-          var desc = parsed.find("error_description", nil)
-          if err != nil
-            msg = desc != nil ? format("%s: %s", err, desc) : str(err)
-          end
-        end
-      except .. end
-      self._save_error(msg)
-      # Retry on 401 (token issues) or 503 (transient backend).
-      return {"success": false, "message": msg, "retry": (http_code == 401 || http_code == 503)}
     end
 
     # ── Status accessors ─────────────────────────────────────────────
@@ -565,7 +506,6 @@ oauth_module.init = def (m)
     end
 
     def get_mqtt_username()  return self._cached_uid end
-    def get_mqtt_password()  return self._cached_mqtt_password end
     def get_mqtt_client_id() return self.device_id end
 
   end

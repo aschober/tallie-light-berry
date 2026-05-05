@@ -1,5 +1,6 @@
 import strict
 import string
+import introspect
 import tallielight_env
 
 #
@@ -447,7 +448,7 @@ class TallieLightService
   var _mqtt_host              # MQTT host returned by backend
   var _mqtt_port              # MQTT port returned by backend
   var _mqtt_authorizer_name   # MQTT authorizer name returned by backend
-  var _register_topics_backoff  # ms, increases by 10s per retry, gives up after 120000
+  var _register_device_backoff   # ms, increases by 10s per retry, gives up after 120000
 
   # ── Lifecycle ─────────────────────────────────────────────
   def init(config)
@@ -461,7 +462,7 @@ class TallieLightService
     self._mqtt_host = nil
     self._mqtt_port = nil
     self._mqtt_authorizer_name = nil
-    self._register_topics_backoff = 10000
+    self._register_device_backoff = 10000
 
     print('TAL: Add rule for OAuth Updated.')
     tasmota.add_rule('OAuth=UPDATED', /->
@@ -470,7 +471,7 @@ class TallieLightService
     self._start()
   end
 
-  # ── Topic registration ────────────────────────────────────
+  # ── Device registration ───────────────────────────────────
   def _webclient_put(url, payload, log_header, headers)
     tasmota.gc()
     var wc = webclient()
@@ -491,7 +492,9 @@ class TallieLightService
     end
   end
 
-  def _register_topics()
+  # Call PUT /devices/{clientId}/register with current team slugs.
+  # Returns {"success": true, "password": ..., "topics": ..., ...} on success.
+  def _register_device()
     import json
     var oauth = global._oauth_service
     var token = oauth._get_valid_access_token()
@@ -500,40 +503,44 @@ class TallieLightService
     var team_slugs = []
     for tc : self.config.team_configs  team_slugs.push(tc['teamSlug'])  end
 
-    var url = tallielight_env.BACKEND_URL + "/devices/" + oauth.device_id + "/topics"
+    var url = tallielight_env.BACKEND_URL + "/devices/" + oauth.device_id + "/register"
     var body = json.dump({"slugs": team_slugs})
     var headers = [["Content-Type", "application/json"],
                    ["Authorization", "Bearer " + token]]
+    token = nil   # collectable once request is in flight
 
-    var resp = self._webclient_put(url, body, "PUT /devices/topics", headers)
-    if resp["http_code"] == 200
-      var parsed = json.load(resp["response_body"])
-      self._allowed_topics = parsed["topics"]
-      self._mqtt_host = parsed["mqttHost"]
-      self._mqtt_port = int(parsed["mqttPort"])
-      self._mqtt_authorizer_name = parsed["mqttAuthorizerName"]
-      print(format("TAL: _register_topics: success, host=%s port=%d topics=%s", self._mqtt_host, self._mqtt_port, str(self._allowed_topics)))
-      return {"success": true}
+    var resp = self._webclient_put(url, body, "PUT /devices/register", headers)
+    var http_code = resp["http_code"]
+    if http_code == 200
+      var parsed = nil
+      try parsed = json.load(resp["response_body"]) except .. end
+      if parsed != nil && classname(parsed) == "map" && parsed.contains("password")
+        self._allowed_topics = parsed["topics"]
+        self._mqtt_host = parsed["mqtt_host"]
+        self._mqtt_port = int(parsed["mqtt_port"])
+        self._mqtt_authorizer_name = parsed["mqtt_authorizer_name"]
+        print(format("TAL: _register_device: success, host=%s port=%d topics=%s",
+                     self._mqtt_host, self._mqtt_port, str(self._allowed_topics)))
+        return {"success": true, "password": parsed["password"]}
+      end
     end
 
-    print(format("TAL: _register_topics: failed, http_code=%s", resp["http_code"]))
-    return {"success": false, "message": format("HTTP %s", resp["http_code"])}
+    var msg = format("HTTP %s", str(http_code))
+    if http_code == -1  msg = "HTTP request failed"  end
+    print(format("TAL: _register_device: failed — %s", msg))
+    return {"success": false, "message": msg}
   end
 
   def _connect_mqtt()
-    tasmota.remove_timer("register_topics_retry")
+    tasmota.remove_timer("register_device_retry")
 
-    var result = self._register_topics()
+    var result = self._register_device()
     if result["success"]
-      self._register_topics_backoff = 10000
+      self._register_device_backoff = 10000
       var oauth = global._oauth_service
       var client_id = oauth.get_mqtt_client_id()
       var mqtt_user = oauth.get_mqtt_username() + '?x-amz-customauthorizer-name=' + self._mqtt_authorizer_name
-      var mqtt_password = oauth.get_mqtt_password()
-      if mqtt_password == nil
-        print('TAL: _connect_mqtt: MQTT password is nil. Cannot connect.')
-        return
-      end
+      var mqtt_password = result["password"]
       print(format("TAL: _connect_mqtt: MQTT creds client_id=%s, pw len=%s", client_id, size(mqtt_password)))
       print(format('TAL: _connect_mqtt: Connecting to MQTT broker %s:%d…', self._mqtt_host, self._mqtt_port))
       var connected = self.mqtt.connect(self._mqtt_host, self._mqtt_port, client_id, mqtt_user, mqtt_password, true)
@@ -541,14 +548,14 @@ class TallieLightService
         print(format('TAL: _connect_mqtt: MQTT initial connection failed (state=%d). Auto-reconnect will retry.', self.mqtt.state()))
       end
     else
-      if self._register_topics_backoff > 120000
+      if self._register_device_backoff > 120000
         print(format("TAL: _connect_mqtt: registration failed (%s), giving up after max retries.", result["message"]))
       else
         print(format("TAL: _connect_mqtt: registration failed (%s), retrying in %dms",
-                     result["message"], self._register_topics_backoff))
-        tasmota.set_timer(self._register_topics_backoff,
-                          /-> self._connect_mqtt(), "register_topics_retry")
-        self._register_topics_backoff += 10000
+                     result["message"], self._register_device_backoff))
+        tasmota.set_timer(self._register_device_backoff,
+                          /-> self._connect_mqtt(), "register_device_retry")
+        self._register_device_backoff += 10000
       end
     end
   end
@@ -586,7 +593,7 @@ class TallieLightService
 
   def _stop()
     print('TAL: _stop: Stopping TallieLightService...')
-    tasmota.remove_timer("register_topics_retry")
+    tasmota.remove_timer("register_device_retry")
     # Note: do not clear the saved_light on stop so that if restarted while an
     # event is active, it can restore the light after boot when no event active.
     # self.lc.restore_light(self.config.saved_light)
@@ -617,7 +624,7 @@ class TallieLightService
       print('TAL: _oauth_updated: OAuth updated but device not authorized. Skipping reconnect.')
       return
     end
-    self._register_topics_backoff = 10000
+    self._register_device_backoff = 10000
     self._connect_mqtt()
   end
 
@@ -1066,7 +1073,8 @@ class TallieLightService
   # ── service static lifecycle helpers ──────────────────────
   static def run_from_conf()
     var c = persist_read_conf()
-    global._tallielight = TallieLightService(c)
+    var cls = introspect.get(global, 'TallieLightService')
+    global._tallielight = (cls != nil ? cls : TallieLightService)(c)
   end
 
   static def unload()
@@ -1085,7 +1093,7 @@ end
 # Module export                #
 ################################
 var tallielight = module('tallielight')
-# Exported for tests. Not expected to be used by customers of module.
+# Exported for tests.
 tallielight.TL_IDLE = TL_IDLE
 tallielight.TL_SOLID = TL_SOLID
 tallielight.TL_ANIM = TL_ANIM

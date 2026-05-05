@@ -10,7 +10,7 @@ fi
 # Assign arguments to variables
 BERRY_FILE_PATH="$1"
 # TASMOTA_IP="192.168.1.250"
-TASMOTA_IP="192.168.1.188"
+TASMOTA_IP="10.193.168.131"
 
 echo "Tasmota IP: $TASMOTA_IP"
 echo "File path: $BERRY_FILE_PATH"

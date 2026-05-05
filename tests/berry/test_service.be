@@ -894,7 +894,7 @@ def run_all()
   test_43_oauth_reconnect()
   test_44_boot_with_saved_light()
 
-  print(format("Batch 3: %d passed, %d failed", passed, failed))
+  print(format("test_service: %d passed, %d failed", passed, failed))
   if failed > 0
     print("Failures:")
     for f : failures

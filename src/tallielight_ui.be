@@ -42,7 +42,7 @@ class TallieLight_UI
 
     # Start TallieLight service if time is initialized
     var rtc = tasmota.rtc()
-    # print(format("SPU: RTC at init: %s", rtc))
+    # print(format("TLU: RTC at init: %s", rtc))
     if (rtc["utc"] != nil && rtc["utc"] > 1000000000)
       # RTC initialized, safe to start service
       tasmota.defer(def () global._tallielight_service.run_from_conf() end)
@@ -59,7 +59,7 @@ class TallieLight_UI
   # Required for proper extension lifecycle management
   ##############################################################################
   def unload()
-    print("SPU: TallieLight extension unloading…")
+    print("TLU: TallieLight extension unloading…")
 
     # Remove the Time#Initialized rule if it exists (in case unload before time init)
     tasmota.remove_rule("Time#Initialized", "tallielight_run")
@@ -82,7 +82,7 @@ class TallieLight_UI
     global._oauth_service = nil
     global._tallielight_service = nil
 
-    print("SPU: TallieLight extension unloaded")
+    print("TLU: TallieLight extension unloaded")
   end
 
   ##############################################################################
@@ -253,25 +253,47 @@ class TallieLight_UI
   end
 
   ##############################################################################
-  # Stream the oauth object as JSON one field at a time. Avoids building the full
-  # map dump on the heap.
+  # Build the minimal oauth payload sent to the browser (page render + poll).
+  # Replaces raw oa_at/oa_rt JWTs with boolean flags so tokens never leave
+  # the device. od is a full read_all_oauth_data() map.
+  ##############################################################################
+  def _build_oauth_payload(od)
+    var exp = od.find("oa_ate")
+    return {
+      "oa_has_at":      od.find("oa_at") != nil,
+      "oa_has_rt":      od.find("oa_rt") != nil,
+      "is_token_valid": exp != nil && exp > tasmota.rtc()["utc"],
+      "oa_ate":         exp,
+      "oa_uc":          od.find("oa_uc"),
+      "oa_vuc":         od.find("oa_vuc"),
+      "oa_pi":          od.find("oa_pi"),
+      "oa_err":         od.find("oa_err"),
+      "oa_email":       od.find("oa_email"),
+    }
+  end
+
+  ##############################################################################
+  # Serialize the oauth map to JSON and send in one call. The map is small
+  # (9 fields, no long token strings) so a single allocation fragments less
+  # than the previous per-field approach.
   ##############################################################################
   def _send_oauth_json(oauth_data)
-    webserver.content_send("{")
-    var first = true
-    for k : oauth_data.keys()
-      var v = oauth_data[k]
-      if v == nil continue end
-      if !first webserver.content_send(",") end
-      webserver.content_send(format("\"%s\":", k))
-      if type(v) == 'string'
-        webserver.content_send(format("\"%s\"", v))
-      else
-        webserver.content_send(str(v))
-      end
-      first = false
-    end
-    webserver.content_send("}")
+    webserver.content_send(json.dump(oauth_data))
+    # webserver.content_send("{")
+    # var first = true
+    # for k : oauth_data.keys()
+    #   var v = oauth_data[k]
+    #   if v == nil continue end
+    #   if !first webserver.content_send(",") end
+    #   webserver.content_send(format("\"%s\":", k))
+    #   if type(v) == 'string'
+    #     webserver.content_send(format("\"%s\"", v))
+    #   else
+    #     webserver.content_send(str(v))
+    #   end
+    #   first = false
+    # end
+    # webserver.content_send("}")
   end
 
   ##############################################################################
@@ -279,11 +301,10 @@ class TallieLight_UI
   # Send config values as inline <script> then stream HTML file (but skip line 1)
   ##############################################################################
   def _send_page_with_config(filename, conf, oauth_data, api_url)
-    # send conf as single JSON dump but oauth_data as streamed field-by-field.
-    # GC between the two so per-field fragments don't pile up.
+    # Both conf and oauth_data are sent as single json.dump() calls to minimise
+    # heap fragmentation from many small allocations.
     webserver.content_send("<script>let conf=")
     webserver.content_send(conf.toJson())
-    tasmota.gc()
     webserver.content_send(",oauth=")
     self._send_oauth_json(oauth_data)
     webserver.content_send(';const apiUrl="')
@@ -295,7 +316,7 @@ class TallieLight_UI
     if _wd != nil && size(_wd) > 0
       filepath = _wd + filename
     end
-    # print(format("SPU: Loading template from %s", filepath))
+    # print(format("TLU: Loading template from %s", filepath))
 
     # Stream the HTML file in small chunks to avoid large string allocations
     # Minified HTML has long multi-KB lines.
@@ -303,12 +324,12 @@ class TallieLight_UI
       var file = open(filepath, "r")
       var chunk = file.readbytes(256)
       while size(chunk) > 0
-        webserver.content_send(chunk.asstring())
+        webserver.content_send(chunk)
         chunk = file.readbytes(256)
       end
       file.close()
     except .. as e, m
-      print(format("SPU: Error loading template %s: %s - %s", filename, e, m))
+      print(format("TLU: Error loading template %s: %s - %s", filename, e, m))
       webserver.content_send(format("<p>Error loading template: %s</p>", filename))
       return
     end
@@ -385,7 +406,7 @@ class TallieLight_UI
         var timezone_offset = rtc['timezone']
         var comp_date_epoch = event.competition_date['epoch'] + (timezone_offset * 60)
         var comp_date = tasmota.time_dump(comp_date_epoch)
-        var date_string = format("%2d/%2d", comp_date['month'], comp_date['day'])
+        var date_string = format("%d/%d", comp_date['month'], comp_date['day'])
         if (comp_date['year'] == current_local_time['year'] &&
             comp_date['month'] == current_local_time['month'] &&
             comp_date['day'] == current_local_time['day'])
@@ -453,17 +474,13 @@ class TallieLight_UI
       global._tallielight_service.run_from_conf()
     end
 
-    # Compact heap before sending page to minimize fragmentation
-    tasmota.gc()
-
-    # title of the web page
-    webserver.content_start("Tallie Light")
-    # send standard Tasmota styles
-    webserver.content_send_style()
-
     # read configuration
     var conf = global._tallielight.config
     if conf == nil
+      # title of the web page
+      webserver.content_start("Tallie Light")
+      # send standard Tasmota styles
+      webserver.content_send_style()
       webserver.content_send("<div style='text-align: center; padding: 20px;'><p>Error: Unable to read Tallie Light configuration</p></div>")
       # webserver.content_button(webserver.BUTTON_CONFIGURATION)
       webserver.content_button(webserver.BUTTON_MAIN)
@@ -471,31 +488,31 @@ class TallieLight_UI
       return
     end
 
-    # get oauth data
-    # Drop the long oa_at JWT and replace it with oa_has_at bool so the
-    # page payload stays small. JS fetches the actual token lazily via
-    # POST /sl with body=get-token=1 only when it needs to call the backend API.
-    var oauth_data = global._oauth_service.read_all_oauth_data()
-    oauth_data["oa_has_at"] = oauth_data["oa_at"] != nil
-    oauth_data.remove("oa_at")
-    var access_token_expiry_time = oauth_data["oa_ate"]
-    var current_time = tasmota.rtc()["utc"]
-    oauth_data["is_token_valid"] = access_token_expiry_time != nil && access_token_expiry_time > current_time
+    print('TLU: ------------------------------')
+    do var m = tasmota.memory() print(format("TLU: mem page-start: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
+    tasmota.gc()
+    do var m = tasmota.memory() print(format("TLU: mem pre-oauth: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
 
-    print(format("SPU: mem pre-conf: %s", tasmota.memory().find("heap_free", "?")))
+    var oauth_data
+    do
+      var _od = global._oauth_service.read_all_oauth_data()
+      oauth_data = self._build_oauth_payload(_od)
+    end
+    # _od is now out of scope — Berry scope exit makes it collectable.
+
+    # title of the web page
+    webserver.content_start("Tallie Light")
+    # send standard Tasmota styles
+    webserver.content_send_style()
     self._send_page_with_config("tallielight_ui_min.html", conf, oauth_data, tallielight_env.BACKEND_URL)
-    print(format("SPU: mem post-html: %s", tasmota.memory().find("heap_free", "?")))
-    # button back to previous page
     # webserver.content_button(webserver.BUTTON_CONFIGURATION)
     webserver.content_button(webserver.BUTTON_MAIN)
-
     # end of web page
     webserver.content_stop()
 
-    # do a gc and print memory debug information
-    print(format("SPU: memory pre-gc: %s", tasmota.memory()))
+    do var m = tasmota.memory() print(format("TLU: mem post-html: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
     tasmota.gc()
-    print(format("SPU: memory post-gc: %s", tasmota.memory()))
+    do var m = tasmota.memory() print(format("TLU: mem post-gc: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
 
   end
 
@@ -528,35 +545,23 @@ class TallieLight_UI
       # Handle polling check from JavaScript (acts as proxy to avoid CORS)
       # Returns JSON with updated OAuth state instead of page redirect
       if webserver.has_arg("poll-oauth")
-        print("SPU: Polling OAuth status check")
+        print("TLU: Polling OAuth status check")
         # Only poll oauth if a device-flow is actually pending. Without
         # this guard, a stale JS poll arriving after auth completed would
         # call /oauth2/token with no device_code and write a misleading
         # "missing device_code" error to oa_err.
-        var snapshot = global._oauth_service.read_all_oauth_data()
-        if snapshot.find("oa_dc") != nil
-          global._oauth_service.complete_authorization_flow()
+        var payload
+        do
+          var od = global._oauth_service.read_all_oauth_data()
+          if od.find("oa_dc") != nil
+            global._oauth_service.complete_authorization_flow()
+            od = global._oauth_service.read_all_oauth_data()
+          end
+          payload = json.dump(self._build_oauth_payload(od))
         end
 
-        # Build a fresh small response map. The JS only needs to know whether
-        # an access token now exists (to trigger reload); never ship the full
-        # JWT down this path. The page render uses the same oa_has_at bool.
-        var oauth_data = global._oauth_service.read_all_oauth_data()
-        var access_token_expiry_time = oauth_data.find("oa_ate")
-        var current_time = tasmota.rtc()["utc"]
-        var resp = {
-          "oa_has_at": oauth_data.find("oa_at") != nil,
-          "oa_ate": access_token_expiry_time,
-          "oa_uc": oauth_data.find("oa_uc"),
-          "oa_vuc": oauth_data.find("oa_vuc"),
-          "oa_pi": oauth_data.find("oa_pi"),
-          "oa_err": oauth_data.find("oa_err"),
-          "oa_email": oauth_data.find("oa_email"),
-          "is_token_valid": access_token_expiry_time != nil && access_token_expiry_time > current_time,
-        }
-
         webserver.content_open(200, "application/json")
-        webserver.content_send(json.dump(resp))
+        webserver.content_send(payload)
         webserver.content_close()
         return
       end
@@ -591,14 +596,14 @@ class TallieLight_UI
 
       # Handle Tallie Light configuration update
       if webserver.has_arg("update-config")
-        print("SPU: Update Config")
+        print("TLU: Update Config")
         var existing_conf = global._tallielight.config
         var updated_conf = global._tallielight_service.TLConfig()
         if webserver.has_arg("team-configs")
           try
             updated_conf.team_configs = json.load(webserver.arg("team-configs"))
           except ..
-            print("SPU: Invalid JSON in team-configs, keeping existing config")
+            print("TLU: Invalid JSON in team-configs, keeping existing config")
             updated_conf.team_configs = existing_conf.team_configs
           end
         else
@@ -624,13 +629,13 @@ class TallieLight_UI
                        updated_conf.animation_type != existing_conf.animation_type ||
                        !self._team_configs_equal(updated_conf.team_configs, existing_conf.team_configs))
         if changed
-          print("SPU: Config changed, updating…")
+          print("TLU: Config changed, updating…")
           # print(format("%s", updatedConf.tostring()))
           global._tallielight_service.persist_conf(updated_conf)
           global._tallielight_service.unload()
           global._tallielight_service.run_from_conf()
         else
-          print("SPU: No changes detected in config")
+          print("TLU: No changes detected in config")
         end
 
         webserver.redirect("/cn?")
@@ -640,7 +645,7 @@ class TallieLight_UI
       # Handle OAuth actions
       if webserver.has_arg("oa-action")
         var action = webserver.arg("oa-action")
-        print(format("SPU: Action Start - %s", action))
+        print(format("TLU: Action Start - %s", action))
         if (action == "initiate")
           global._oauth_service.initiate_authorization_flow()
         elif (action == "complete")
@@ -655,9 +660,9 @@ class TallieLight_UI
           end
           global._oauth_service.delete_all_oauth_data()
         else
-          print(format("SPU: Unknown action '%s'", str(action)))
+          print(format("TLU: Unknown action '%s'", str(action)))
         end
-        print(format("SPU: Action Finish - %s", action))
+        print(format("TLU: Action Finish - %s", action))
         
         # tallielight_html = nil # Reset HTML template to force reload
         webserver.redirect("/tl")
@@ -667,7 +672,7 @@ class TallieLight_UI
       raise "value_error", "Unknown command"
 
     except .. as e, m
-      print(format("SPU: Exception> '%s' - %s", e, m))
+      print(format("TLU: Exception> '%s' - %s", e, m))
       # display error page with sanitized exception messages
       var se = string.replace(string.replace(str(e), "&", "&amp;"), "<", "&lt;")
       var sm = string.replace(string.replace(str(m), "&", "&amp;"), "<", "&lt;")

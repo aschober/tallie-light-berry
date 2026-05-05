@@ -276,7 +276,7 @@ def run_all()
   test_remove_light_change_rules()
   test_register_power_on_for_anim_only_fires_on_value_1()
 
-  print(format("Batch 2: %d passed, %d failed", passed, failed))
+  print(format("test_lightcontroller: %d passed, %d failed", passed, failed))
   if failed > 0
     print("Failures:")
     for f : failures

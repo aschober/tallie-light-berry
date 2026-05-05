@@ -271,7 +271,6 @@ class _OAuthService
   def is_authorized(refresh) return true end
   def _get_valid_access_token() return 'test_access_token' end
   def get_mqtt_username() return 'test_user' end
-  def get_mqtt_password() return 'test_password' end
   def get_mqtt_client_id() return 'test_client' end
   def unload() end
 end
@@ -306,12 +305,12 @@ harness.enqueue_http = def (http_code, response_body)
   _wc_state['responses'].push({'http_code': http_code, 'response_body': response_body})
 end
 
-# Queue a successful PUT /devices/topics response
+# Queue a successful PUT /devices/register response
 harness.enqueue_topics_response = def (topics, host, port)
   import json
   if host == nil  host = 'test-mqtt.iot.amazonaws.com'  end
   if port == nil  port = 443  end
-  _wc_state['responses'].push({'http_code': 200, 'response_body': json.dump({'topics': topics, 'mqttHost': host, 'mqttPort': port, 'mqttAuthorizerName': 'test-authorizer'})})
+  _wc_state['responses'].push({'http_code': 200, 'response_body': json.dump({'topics': topics, 'mqtt_host': host, 'mqtt_port': port, 'mqtt_authorizer_name': 'test-authorizer', 'password': 'test_password'})})
 end
 
 # Inspect actual requests made through webclient

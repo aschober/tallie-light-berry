@@ -234,7 +234,7 @@ def run_all()
   test_persist_saved_light_only_updates_saved_light()
   test_persist_saved_light_nil_clears()
 
-  print(format("Batch 1: %d passed, %d failed", passed, failed))
+  print(format("test_data: %d passed, %d failed", passed, failed))
   if failed > 0
     print("Failures:")
     for f : failures

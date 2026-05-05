@@ -5,10 +5,16 @@
   .button:disabled,.tcb:disabled{background:var(--c_btnoff)!important;cursor:not-allowed;opacity:.6}
   /* Green Save button keeps its green color when disabled — overrides the blue .button:disabled above. */
   .button.bgrn:disabled{background:var(--c_btnsv)!important}
-  /* OAuth section elements can contain long URLs/codes — prevent overflow. */
-  #account-section fieldset,#account-section p,#account-section div{max-width:100%;box-sizing:border-box;overflow-wrap:break-word}
+  /* Prevent the account section from pushing the outer inline-block wrapper wider.
+     width:0 + min-width:100% means it fills the wrapper's natural width (set by
+     other content like team cards) without contributing to it. overflow:hidden
+     clips anything that would still escape, and word-break wraps the URL text. */
+  #account-section{width:0;min-width:100%;box-sizing:border-box}
+  #account-section fieldset{overflow:hidden;box-sizing:border-box;overflow-wrap:break-word}
+  #account-section p,#account-section div{max-width:100%;box-sizing:border-box;overflow-wrap:break-word}
+  #login-verification-url{display:block;word-break:break-all}
   /* Error banner shown when Berry reports an OAuth error (oa_err). */
-  .ec{background:#ffe6e6;border-left:3px solid #d43535;padding:8px;margin:8px 0;border-radius:3px;color:#d43535;font-size:.85em;line-height:1.4;word-break:break-all}
+  .ec{background:#ffe6e6;border-left:3px solid #d43535;padding:8px;margin:8px 0;border-radius:3px;color:#d43535;font-size:.85em;line-height:1.4;overflow-wrap:break-word}
   /* Settings section layout: label on left, control on right. */
   .st{display:flex;flex-direction:column;width:100%}
   .row{display:flex;justify-content:space-between;align-items:center;padding-bottom:5px;margin-right:10px;margin-bottom:2px;min-height:26px}
@@ -61,6 +67,10 @@
   /* Card loading state: thin pulsing bar along the top edge of the card. */
   .tc[data-state=loading]::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;border-radius:.3rem .3rem 0 0;background:rgba(255,255,255,.2);animation:sk 1.2s ease-in-out infinite}
   @keyframes sk{0%,100%{opacity:.3}50%{opacity:1}}
+  /* Plan skeleton: fixed-width pill shown while billing fetch is in flight. */
+  #account-subscription.loading{display:inline-block;width:80px;height:1em;border-radius:3px;background:rgba(255,255,255,.15);animation:sk 1.2s ease-in-out infinite;vertical-align:middle}
+  /* External-link icon appended inline by JS to account row links. */
+  .ext-link-icon{display:inline-block;width:.75em;height:.75em;margin-left:.1em;vertical-align:18%;opacity:.75}
   /* Color row hidden until a team is selected (data-state=ready + data-team).
      No data-state means an empty new card — hide it there too. */
   .tc:not([data-state]) [data-f=color-row],.tc[data-state=loading]:not([data-saved-team]) [data-f=color-row],.tc[data-state=ready]:not([data-team]) [data-f=color-row]{display:none}
@@ -137,13 +147,13 @@
          right position within the authed compact block. -->
     <div id="account-info-slot">
       <p id="account-email-row" data-show="authed expired-refresh expired-reauth"><b>Email:</b> <span id="account-email"></span></p>
-      <p id="account-subscription-row" data-show="authed expired-refresh expired-reauth"><b>Plan:</b> <span id="account-subscription">Basic</span></p>
+      <p id="account-subscription-row" data-show="authed expired-refresh expired-reauth"><b>Plan:</b> <span id="account-subscription" class="loading"></span> <span id="account-usage" style="color:var(--c_tab);font-size:.9em"></span></p>
     </div>
     <!-- Status message shown in pending / expired states. -->
     <p id="account-status" data-show="pending expired-refresh expired-reauth" style="padding-left:5px;margin-bottom:2px"><span id="account-status-message"></span></p>
     <!-- Device-flow login instructions: verification URL + user code shown while pending. -->
     <div data-show="pending" style="padding-top:0">
-      <p><a id="login-verification-url" href="#" target="_blank" style="word-break:break-all"></a></p>
+      <p><a id="login-verification-url" href="#" target="_blank"></a></p>
       <p style="margin-top:20px"><b>User Code:</b> <code id="login-user-code"></code></p>
     </div>
     <!-- Polling countdown message shown while device-flow poll timer is active. -->
@@ -235,7 +245,7 @@ function fmtDate(ts) {
 
 function computeAuth(o) {
   if (o.oa_vuc && o.oa_uc) return 'pending';
-  if (o.oa_has_at) return o.is_token_valid ? 'authed' : (o.oa_rt ? 'expired-refresh' : 'expired-reauth');
+  if (o.oa_has_at) return o.is_token_valid ? 'authed' : (o.oa_has_rt ? 'expired-refresh' : 'expired-reauth');
   return 'unauthed';
 }
 const _auth = computeAuth(oauth);
@@ -317,11 +327,17 @@ _el('animation-type').value = conf.animationType ?? 'breathe';
   function renderOAuth() {
     const prev = ui.auth;
     ui.auth = computeAuth(oauth);
+    // Refresh email display in case oauth was updated by a poll response.
+    // After fetchBillingInfo runs the span is replaced with an <a> (no id), so guard.
+    const emailSpan = $('account-email');
+    if (emailSpan) emailSpan.textContent = oauth.oa_email || '';
     // Move email/subscription rows only when auth state changes to avoid unnecessary DOM churn.
+    let needsBillingFetch = false;
     if (ui.auth !== prev) {
       if (ui.auth === 'authed') {
         authedEmailSlot.appendChild(emailRow);
         authedEmailSlot.appendChild(subscriptionRow);
+        needsBillingFetch = true;
       } else {
         defaultEmailSlot.appendChild(emailRow);
         defaultEmailSlot.appendChild(subscriptionRow);
@@ -334,6 +350,9 @@ _el('animation-type').value = conf.animationType ?? 'breathe';
       stopPolling(); pollCount.reset();
     }
     render();
+    // Fetch after render() so body.dataset.auth='authed' is set and the subscription
+    // row is visible — offsetWidth sizing in fetchBillingInfo needs laid-out elements.
+    if (needsBillingFetch) fetchBillingInfo();
   }
 
   // ---------- OAuth polling ----------
@@ -737,6 +756,58 @@ _el('animation-type').value = conf.animationType ?? 'breathe';
       document.querySelectorAll('.tsp-r.open').forEach(l => l.classList.remove('open'));
     }
   });
+
+  // ---------- Helpers ----------
+  function makeExtLink(href, text) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = text;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 10 10');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.className.baseVal = 'ext-link-icon';
+    svg.innerHTML = '<path d="M1 1h4v1H2v6h6V5h1v4H1z" fill="currentColor"/><path d="M5 1h4v4L8 4V3L5.5 5.5l-.7-.7L7.3 2H6z" fill="currentColor"/>';
+    a.appendChild(svg);
+    return a;
+  }
+
+  // ---------- Billing info ----------
+  // Fetched on-demand when authed so plan name, usage, and portal URLs are always fresh.
+  // billing_url and profile_url are short-lived so they must not be cached or persisted.
+  async function fetchBillingInfo() {
+    // Size the skeleton to match the email element's rendered width.
+    const emailEl = $('account-email') || document.querySelector('#account-email-row a');
+    const planSkel = $('account-subscription');
+    if (planSkel && emailEl) planSkel.style.width = (emailEl.offsetWidth || 80) + 'px';
+    try {
+      const returnUrl = new URL('/tl', window.location.href).toString();
+      const r = await apiFetch(`${apiUrl}/account/billing?return_url=${encodeURIComponent(returnUrl)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+
+      // Email — make it a link to profile_url if available.
+      const emailSpanOrLink = document.getElementById('account-email');
+      if (emailSpanOrLink && d.profile_url) emailSpanOrLink.replaceWith(makeExtLink(d.profile_url, emailSpanOrLink.textContent));
+
+      // Plan name — make it a link to billing_url if available.
+      const planEl = document.getElementById('account-subscription');
+      if (planEl) {
+        planEl.classList.remove('loading');
+        const planName = d.plan_name || '';
+        if (d.billing_url) planEl.replaceWith(makeExtLink(d.billing_url, planName));
+        else planEl.textContent = planName;
+      }
+
+      // Usage counter displayed after plan name.
+      const usageEl = document.getElementById('account-usage');
+      if (usageEl && d.meter_limit != null) {
+        usageEl.textContent = `(using ${d.meter_usage ?? 0} of ${d.meter_limit})`;
+      }
+    } catch (_e) {
+      // Non-fatal: clear skeleton so it doesn't pulse indefinitely.
+      document.getElementById('account-subscription')?.classList.remove('loading');
+    }
+  }
 
   // ---------- Init ----------
   renderOAuth();

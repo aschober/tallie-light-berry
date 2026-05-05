@@ -159,7 +159,6 @@ def test_refresh_access_token_4xx_wipes_all_auth()
   persist.oa_rt = "old-refresh"
   persist.oa_uid = "u1"
   persist.oa_email = "x@y.com"
-  persist.oa_mp = "mqtt-pass"
 
   # OAuth returns 401 → refresh token invalid.
   harness.enqueue_http(401, json.dump({"error": "invalid_grant"}))
@@ -170,7 +169,6 @@ def test_refresh_access_token_4xx_wipes_all_auth()
   expect_nil("oa_ate wiped", persist.find("oa_ate", nil))
   expect_nil("oa_uid wiped", persist.find("oa_uid", nil))
   expect_nil("oa_email wiped", persist.find("oa_email", nil))
-  expect_nil("oa_mp wiped", persist.find("oa_mp", nil))
 end
 
 # ── 6. clear_pending_oauth_data scope ──────────────────────
@@ -183,7 +181,6 @@ def test_clear_pending_preserves_persistent_auth()
   persist.oa_rt = "refresh"
   persist.oa_uid = "u1"
   persist.oa_email = "x@y.com"
-  persist.oa_mp = "mqtt-pass"
   # Pending fields (from device-flow init) — held in-memory, not persist.
   oa._device_flow_state["oa_dc"]  = "device-code"
   oa._device_flow_state["oa_dce"] = 1700000500
@@ -207,7 +204,6 @@ def test_clear_pending_preserves_persistent_auth()
   expect("oa_rt preserved", persist.find("oa_rt", nil), "refresh")
   expect("oa_uid preserved", persist.find("oa_uid", nil), "u1")
   expect("oa_email preserved", persist.find("oa_email", nil), "x@y.com")
-  expect("oa_mp preserved", persist.find("oa_mp", nil), "mqtt-pass")
 end
 
 # ── 7. read_all_oauth_data freshness ───────────────────────
@@ -243,7 +239,7 @@ def run_all()
   test_clear_pending_preserves_persistent_auth()
   test_read_all_oauth_data_returns_fresh_map()
 
-  print(format("Batch 4: %d passed, %d failed", passed, failed))
+  print(format("test_oauth: %d passed, %d failed", passed, failed))
   if failed > 0
     print("Failures:")
     for f : failures

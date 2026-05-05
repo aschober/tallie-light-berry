@@ -19,7 +19,7 @@ cd "$ROOT"
 fail=0
 for t in tests/berry/test_*.be; do
   echo "── $t ──"
-  if ! "$BERRY_BIN" -m tests/berry/stubs:src "$t" 2>&1 | grep -E "(Batch|FAIL|^  -)"; then
+  if ! "$BERRY_BIN" -m tests/berry/stubs:src "$t" 2>&1 | grep -E "(test_[a-z]+:|FAIL|^  -)"; then
     fail=1
   fi
 done
