@@ -269,11 +269,11 @@ Persist keys (snake_case, not compatible with v1):
 
 ## OAuth / MQTT Reconnection
 
-Authentication uses the OAuth 2.0 Device Authorization Flow (RFC 8628). `oauth.be` is a memory-conscious singleton: long strings (access token JWT, refresh token) stay in `persist` (Tasmota flash) and are only loaded into RAM when needed. Three small fields (`oa_uid`, `oa_mp`, `oa_ate`) are cached on the instance for zero-flash-hit access on every cron tick and MQTT reconnect. Device-flow transient state (`oa_uc`, `oa_vuc`, `oa_dc`, `oa_dce`, `oa_pi`, `oa_err`) is held in an in-memory map and never persisted.
+Authentication uses the OAuth 2.0 Device Authorization Flow (RFC 8628). `oauth.be` is a memory-conscious singleton: long strings (access token JWT, refresh token) stay in `persist` (Tasmota flash) and are only loaded into RAM when needed. Two small fields (`oa_uid`, `oa_ate`) are cached on the instance for zero-flash-hit access on every cron tick and MQTT reconnect. Device-flow transient state (`oa_uc`, `oa_vuc`, `oa_dc`, `oa_dce`, `oa_pi`, `oa_err`) is held in an in-memory map and never persisted.
 
-When an `OAuth=UPDATED` Tasmota rule fires, `TallieLightService` disconnects and reconnects with fresh credentials. In-flight events are not lost — `last_events` persists in memory across reconnects.
+When an `OAuth=UPDATED` Tasmota rule fires, `TallieLightService` disconnects, registers device to get fresh credentials, and reconnects. In-flight events are not lost — `last_events` persists in memory across reconnects.
 
-The settings page never receives the raw access token on page load (`oa_has_at: bool` is sent instead). JS fetches the token lazily via `GET /tl?get-token=1` only when calling the backend API, and caches it until a 401 invalidates it.
+The settings page never receives the raw access token or refresh token on page load (`oa_has_at: bool` or `oa_has_rt: bool` is sent instead). JS fetches the access token lazily via `GET /tl?get-token=1` only when calling the backend API, and caches it until a 401 invalidates it.
 
 ---
 

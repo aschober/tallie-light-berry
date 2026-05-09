@@ -305,17 +305,13 @@ class LightController
     if self._anim_engine == nil
       self._anim_engine = animation.init_strip()
     end
-    # Animation engine applies its own bri scaling, so set strip bri to max
-    # so the animation has full dynamic range.
     self._anim_engine.strip.set_bri(255)
-
-    var team_color_upper = string.toupper(team_color_map['rgb'])
-    var team_color_hex = number(f'0xFF{team_color_upper}')
+    var anim_color = number(f'0xFF{string.toupper(team_color_map["rgb"])}')
 
     var anim
     if anim_type == 'comet'
       anim = animation.comet(self._anim_engine)
-      anim.color = team_color_hex
+      anim.color = anim_color
       anim.tail_length = 3
       anim.fade_factor = 255
       anim.direction = -1
@@ -324,7 +320,7 @@ class LightController
     elif anim_type == 'crenel'
       var num_pixels = self._anim_engine.get_strip().pixel_count()
       anim = animation.crenel(self._anim_engine)
-      anim.color = team_color_hex
+      anim.color = anim_color
       anim.pulse_size = 1
       anim.low_size = 3
       anim.nb_pulse = -1
@@ -334,24 +330,25 @@ class LightController
       scroll.duration = 2000
       anim.pos = scroll
     elif anim_type == 'breathe'
-      var current_bri = int(team_color_map['bri'])
-      var bri_range = self._calc_breathe_brightness(current_bri)
+      var br = self._calc_breathe_brightness(int(team_color_map['bri']))
       anim = animation.breathe(self._anim_engine)
-      anim.color = team_color_hex
-      anim.min_brightness = bri_range[0]
-      anim.max_brightness = bri_range[1]
+      anim.color = anim_color
+      anim.min_brightness = br[0]
+      anim.max_brightness = br[1]
       anim.curve_factor = 2
       anim.period = 3000
     else
-      print(format('TAL: set_animation — unknown anim_type "%s", falling back to breathe.', anim_type))
-      var current_bri = int(team_color_map['bri'])
-      var bri_range = self._calc_breathe_brightness(current_bri)
-      anim = animation.breathe(self._anim_engine)
-      anim.color = team_color_hex
-      anim.min_brightness = bri_range[0]
-      anim.max_brightness = bri_range[1]
-      anim.curve_factor = 2
-      anim.period = 3000
+      var num_pixels = self._anim_engine.get_strip().pixel_count()
+      anim = animation.crenel(self._anim_engine)
+      anim.color = anim_color
+      anim.pulse_size = 1
+      anim.low_size = 3
+      anim.nb_pulse = -1
+      var scroll = animation.sawtooth(self._anim_engine)
+      scroll.min_value = 0
+      scroll.max_value = num_pixels - 1
+      scroll.duration = 2000
+      anim.pos = scroll
     end
 
     self._anim_engine.add(anim)
@@ -359,19 +356,16 @@ class LightController
     return anim
   end
 
-  # Calculate min/max brightness for an animation based on the current
-  #   brightness in 0–255. Returns [min, max].
   def _calc_breathe_brightness(current_bri)
-    var max_b = int(current_bri) + 32
-    if max_b > 255 max_b = 255 end
-    return [0, max_b]
+    var min_b = current_bri < 64 ? 0 : 64
+    return [min_b, 255]
   end
 
-  # Update only the brightness range of an existing breathe animation. Used
-  #   when the user changes brightness without changing hue/sat.
-  def update_breathe_brightness(anim, new_bri_255)
+  def update_animation(anim, new_rgb, new_bri_255)
     import animation
-    if anim != nil && isinstance(anim, animation.breathe)
+    # update animation color
+    anim.color = number(f'0xFF{string.toupper(new_rgb)}')
+    if isinstance(anim, animation.breathe)
       var br = self._calc_breathe_brightness(new_bri_255)
       anim.min_brightness = br[0]
       anim.max_brightness = br[1]
@@ -472,9 +466,10 @@ class TallieLightService
   end
 
   # ── Device registration ───────────────────────────────────
-  def _webclient_put(url, payload, log_header, headers)
+  def _webclient_put(url, payload, headers)
     tasmota.gc()
     var wc = webclient()
+    wc.set_timeouts(4000, 3000)
     try
       wc.begin(url)
       for h : headers  wc.add_header(h[0], h[1])  end
@@ -482,12 +477,10 @@ class TallieLightService
       var body = wc.get_string()
       wc.close()
       wc = nil
-      tasmota.gc()
       return {"http_code": http_code, "response_body": body}
     except .. as e, msg
       try wc.close() except .. end
       wc = nil
-      tasmota.gc()
       return {"http_code": -1, "response_body": ""}
     end
   end
@@ -509,7 +502,7 @@ class TallieLightService
                    ["Authorization", "Bearer " + token]]
     token = nil   # collectable once request is in flight
 
-    var resp = self._webclient_put(url, body, "PUT /devices/register", headers)
+    var resp = self._webclient_put(url, body, headers)
     var http_code = resp["http_code"]
     if http_code == 200
       var parsed = nil
@@ -876,10 +869,10 @@ class TallieLightService
       self.state.animation = nil
       self._set_mode(TL_SOLID, format('%s won %s-%s', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score))
     else
-      # In-progress → add animation on top
-      print(format('TAL: _set_active_event: set_animation team_color_map=%s', self.state.team_color_map))
+      # In-progress winning → add animation on top
+      print(format('TAL: _set_active_event: set_animation rgb=%s', self.state.team_color_map['rgb']))
       self.state.animation = self.lc.set_animation(self.state.team_color_map, self.config.animation_type)
-      self._set_mode(TL_ANIM, format('%s leading %s-%s (animation_type: %s)', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score, self.config.animation_type))
+      self._set_mode(TL_ANIM, format('%s winning %s-%s (%s)', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score, self.config.animation_type))
     end
 
     # Schedule timeout and register HSB/Power change rules
@@ -972,13 +965,17 @@ class TallieLightService
     if hue_unchanged && sat_unchanged
       # Brightness-only change — keep state
       var new_bri_255 = int((new_bri * 255) / 100)
-      print(format('TAL: _on_hsb_change: brightness-only change (bri %d→%d) - update saved light state', team_bri, new_bri_255))
+      var new_rgb = light.get()['rgb']
+      print(format('TAL: _on_hsb_change: brightness-only change (bri %d→%d) - update saved light state and animation', team_bri, new_bri_255))
       self.state.team_color_map['bri'] = new_bri_255
+      self.state.team_color_map['rgb'] = new_rgb
       if self.config.saved_light != nil
         self.config.saved_light.bri = new_bri_255
         persist_saved_light(self.config.saved_light)
       end
-      self.lc.update_breathe_brightness(self.state.animation, new_bri_255)
+      if self.state.animation != nil
+        self.lc.update_animation(self.state.animation, new_rgb, new_bri_255)
+      end
       return
     end
 

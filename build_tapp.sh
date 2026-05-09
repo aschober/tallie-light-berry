@@ -5,6 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MANIFEST_FILE="$SCRIPT_DIR/manifest.json"
 BUILD_DIR="$SCRIPT_DIR/build"
 
+# Cross-platform in-place sed for macOS (BSD sed) and Linux (GNU sed)
+sed_in_place() {
+  local expr="$1"
+  local file="$2"
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$expr" "$file"
+  else
+    sed -i '' "$expr" "$file"
+  fi
+}
+
 # Source files to copy into build/ before packaging
 SOURCE_FILES=(
   "manifest.json"
@@ -64,7 +75,7 @@ update_version() {
   local hex_version
   hex_version=$(version_to_hex "$new_version")
 
-  sed -i '' "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" "$MANIFEST_FILE"
+  sed_in_place "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" "$MANIFEST_FILE"
   echo "Updated manifest.json to version $new_version ($hex_version)"
 }
 
@@ -123,7 +134,7 @@ strip_berry() {
     before=$(wc -c < "$path")
     total_before=$((total_before + before))
     # Remove single-line # comments (but NOT #- block comment delimiters), and blank lines
-    sed -i '' '/^[[:space:]]*#[^-]/d; /^[[:space:]]*$/d' "$path"
+    sed_in_place '/^[[:space:]]*#[^-]/d; /^[[:space:]]*$/d' "$path"
     local after
     after=$(wc -c < "$path")
     total_after=$((total_after + after))

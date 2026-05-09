@@ -25,14 +25,17 @@ var tallielight_ui = module('tallielight_ui')
 
 # TallieLight_UI: Tasmota Driver that defines the web UI and configuration
 class TallieLight_UI
-  # Pre-built format strings for web_sensor() scoreboard rendering (allocated once at class definition)
-  # The non-clickable version (_pre_plain) is a <pre> with monospace font
-  static _pre_plain = "<pre style='margin:0;font-family:monospace;font-size:14px;display:inline-block;'>%s</pre>"
-  # The clickable version (_pre_click) cycles the indicator through three states:
-  # □ = inactive           → activate-team-light  → ■
-  # ■ = active+on          → mute-team-light      → ▣
-  # ▣ = muted(active+off)  → unpin-team-light     → □
-  static _pre_click = "<pre data-slug='%s' onclick=\"var sl=this.dataset.slug,si=this.querySelector('.si'),cur=si?si.innerHTML:'',b;if(cur=='\\u25a0'){b='mute-team-light='+sl;if(si)si.innerHTML='\\u25a3'}else if(cur=='\\u25a3'){b='unpin-team-light=1';document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'})}else{document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'});b='activate-team-light='+sl;if(si)si.innerHTML='\\u25a0'}fetch('/tl',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})\" style='margin:0;font-family:monospace;font-size:14px;display:inline-block;cursor:pointer;'>%s</pre>"
+  # Pre-built HTML wrappers for web_sensor() scoreboard rendering (allocated once at class definition)
+  static _pre_plain_open = "<pre style='margin:0;font-family:monospace;font-size:14px;display:inline-block;'>"
+  # The clickable version (_pre_click_open) cycles the indicator through three states:
+  # □ = inactive           → activate_team_light=<slug>    → ■
+  # ■ = active+on          → mute_team_light=<slug>        → ▣
+  # ▣ = muted(active+off)  → deactivate_team_light=<slug>  → □
+  static _pre_click_open = "<pre data-slug='%s' onclick=\"var sl=this.dataset.slug,si=this.querySelector('.si'),cur=si?si.innerHTML:'',b;if(cur=='\\u25a0'){b='mute_team_light='+sl;if(si)si.innerHTML='\\u25a3'}else if(cur=='\\u25a3'){b='deactivate_team_light='+sl;document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'})}else{document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'});b='activate_team_light='+sl;if(si)si.innerHTML='\\u25a0'}fetch('/tl',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})\" style='margin:0;font-family:monospace;font-size:14px;display:inline-block;cursor:pointer;'>"
+  static _pre_close = "</pre>"
+  static _pad7 = ["", " ", "  ", "   ", "    ", "     ", "      ", "       "]
+  static _pad10 = ["", " ", "  ", "   ", "    ", "     ", "      ", "       ", "        ", "         ", "          "]
+  static _pad12 = ["", " ", "  ", "   ", "    ", "     ", "      ", "       ", "        ", "         ", "          ", "           ", "            "]
 
   def init()
 
@@ -190,9 +193,6 @@ class TallieLight_UI
         indicator_char = "&#9633;"
       end
 
-      # Create a scoreboard for this team event
-      var scoreboard = self._get_team_scoreboard(team_event, team_league, indicator_color, indicator_char)
-
       # Start new row if needed
       if row_count % teams_per_row == 0
         webserver.content_send("<tr>")
@@ -214,12 +214,8 @@ class TallieLight_UI
       # Add team cell
       webserver.content_send(format("<td style='padding: %s; vertical-align: middle; width: 50%%; text-align: %s;'%s>", padding, text_align, colspan))
 
-      # Wrap with _pre_click if active or winning, otherwise just _pre_plain
-      if is_active_event || is_winning
-        webserver.content_send(format(self._pre_click, team_slug, scoreboard))
-      else
-        webserver.content_send(format(self._pre_plain, scoreboard))
-      end
+      # Stream scoreboard directly into <pre> to avoid building one large string.
+      self._send_team_scoreboard(team_event, team_league, indicator_color, indicator_char, team_slug, (is_active_event || is_winning))
       webserver.content_send("</td>")
 
       row_count += 1
@@ -344,13 +340,15 @@ class TallieLight_UI
   end
 
   ##############################################################################
-  # Helper method to generate an ASCII scoreboard for a team event
+  # Helper method to generate and send an ASCII scoreboard for a team event
   # event: the TallieLightEvent object to display
   # league: display string of the league shown at top (e.g., "NBA", "NFL")
+  # team_slug: slug identifier for the team
+  # is_clickable: whether the scoreboard should be clickable
   # indicatorColor: if not nil, adds a colored square next to competitor's team
   # indicatorChar: HTML entity for the indicator (&#9632; filled or &#9633; outline)
   ##############################################################################
-  def _get_team_scoreboard(event, league, indicator_color, indicator_char)
+  def _send_team_scoreboard(event, league, indicator_color, indicator_char, team_slug, is_clickable)
     var comp_home_away = event.competitor_home_away
 
     # Prepare the square indicator column (always 2 chars visible: space + square or two spaces)
@@ -362,29 +360,53 @@ class TallieLight_UI
     var away_indicator = (comp_home_away == false) ? comp_indicator : opp_indicator
     var home_indicator = (comp_home_away == true) ? comp_indicator : opp_indicator
 
+    # Compute status booleans once to avoid repeated method dispatch.
+    var is_in_progress = event.is_in_progress()
+    var is_final_game = event.is_final()
+    var is_scheduled_game = event.is_scheduled()
+
     # Shared border string used for top (if league is empty) and bottom
     var full_border = "+--------------+"
-    # Create top border with league name, falling back to plain border if league is empty
-    var top_border = size(league) > 0 ? format("+ %s %s+", league, "-" * (12 - size(league))) : full_border
+    # Create top border with league name, clamping dash count for long league labels.
+    var league_size = size(league)
+    var league_border_dashes = 12 - league_size
+    if league_border_dashes < 0 league_border_dashes = 0 end
+    var top_border = league_size > 0 ? format("+ %s %s+", league, "-" * league_border_dashes) : full_border
 
     # Build the middle line and team lines based on game status
     var middle_line
     var away_line
     var home_line
-    var has_scores = (event.is_in_progress() || event.is_final())
+    var has_scores = (is_in_progress || is_final_game)
 
     if has_scores
-      var teams = self._get_away_home_teams(comp_home_away, event.competitor_abbreviation, event.opponent_abbreviation, event.competitor_score, event.opponent_score, true)
-      var away_team = teams[0]
-      var away_score = teams[1]
-      var home_team = teams[2]
-      var home_score = teams[3]
-      away_line = away_team + away_indicator + (" " * (7 - size(away_team))) + format("%3s", away_score)
-      home_line = home_team + home_indicator + (" " * (7 - size(home_team))) + format("%3s", home_score)
+      var away_team
+      var away_score
+      var home_team
+      var home_score
+      if comp_home_away == false
+        away_team = event.competitor_abbreviation
+        away_score = event.competitor_score
+        home_team = event.opponent_abbreviation
+        home_score = event.opponent_score
+      else
+        away_team = event.opponent_abbreviation
+        away_score = event.opponent_score
+        home_team = event.competitor_abbreviation
+        home_score = event.competitor_score
+      end
+      var away_pad = 7 - size(away_team)
+      if away_pad < 0 away_pad = 0 end
+      var home_pad = 7 - size(home_team)
+      if home_pad < 0 home_pad = 0 end
+      away_line = away_team + away_indicator + self._pad7[away_pad] + format("%3s", away_score)
+      home_line = home_team + home_indicator + self._pad7[home_pad] + format("%3s", home_score)
       var comp_status_detail = event.competition_status_short_detail
-      middle_line = (" " * (12 - size(comp_status_detail))) + "<b>" + comp_status_detail + "</b>"
+      var comp_status_pad = 12 - size(comp_status_detail)
+      if comp_status_pad < 0 comp_status_pad = 0 end
+      middle_line = self._pad12[comp_status_pad] + "<b>" + comp_status_detail + "</b>"
       # Bold winner and gray out loser for final games
-      if event.is_final()
+      if is_final_game
         if away_score > home_score
           away_line = "<b>" + away_line + "</b>"
           home_line = "<span style='color:#666'>" + home_line + "</span>"
@@ -395,11 +417,23 @@ class TallieLight_UI
       end
     else
       # No scores — scheduled, postponed, or other status
-      var teams = self._get_away_home_teams(comp_home_away, event.competitor_abbreviation, event.opponent_abbreviation, event.competitor_score, event.opponent_score, false)
-      away_line = teams[0] + away_indicator + (" " * (10 - size(teams[0])))
-      home_line = teams[1] + home_indicator + (" " * (10 - size(teams[1])))
+      var away_team
+      var home_team
+      if comp_home_away == false
+        away_team = event.competitor_abbreviation
+        home_team = event.opponent_abbreviation
+      else
+        away_team = event.opponent_abbreviation
+        home_team = event.competitor_abbreviation
+      end
+      var away_pad = 10 - size(away_team)
+      if away_pad < 0 away_pad = 0 end
+      var home_pad = 10 - size(home_team)
+      if home_pad < 0 home_pad = 0 end
+      away_line = away_team + away_indicator + self._pad10[away_pad]
+      home_line = home_team + home_indicator + self._pad10[home_pad]
 
-      if event.is_scheduled()
+      if is_scheduled_game
         # Show date/time for scheduled games
         var rtc = tasmota.rtc()
         var current_local_time = tasmota.time_dump(rtc['local'])
@@ -412,14 +446,30 @@ class TallieLight_UI
             comp_date['day'] == current_local_time['day'])
           date_string = tasmota.strftime("%l:%M %p", comp_date_epoch)
         end
-        middle_line = (" " * (12 - size(date_string))) + "<b>" + date_string + "</b>"
+        var date_pad = 12 - size(date_string)
+        if date_pad < 0 date_pad = 0 end
+        middle_line = self._pad12[date_pad] + "<b>" + date_string + "</b>"
       else
         middle_line = format("%12s", event.competition_status_short_detail)
       end
     end
 
-    return format("%s\n| %s |\n| %s |\n| %s |\n%s",
-      top_border, middle_line, away_line, home_line, full_border)
+    # Open clickable/non-clickable pre wrapper.
+    if is_clickable
+      webserver.content_send(format(self._pre_click_open, team_slug))
+    else
+      webserver.content_send(self._pre_plain_open)
+    end
+    webserver.content_send(top_border)
+    webserver.content_send("\n| ")
+    webserver.content_send(middle_line)
+    webserver.content_send(" |\n| ")
+    webserver.content_send(away_line)
+    webserver.content_send(" |\n| ")
+    webserver.content_send(home_line)
+    webserver.content_send(" |\n")
+    webserver.content_send(full_border)
+    webserver.content_send(self._pre_close)
   end
 
   ##############################################################################
@@ -440,27 +490,6 @@ class TallieLight_UI
       end
     end
     return true
-  end
-
-  ##############################################################################
-  # Helper method to determine away/home teams based on competitor home/away boolean
-  # Returns [awayTeam, homeTeam] if showScores is false
-  # Returns [awayTeam, awayScore, homeTeam, homeScore] if showScores is true
-  ##############################################################################
-  def _get_away_home_teams(comp_home_away, comp_abbrev, opp_abbrev, comp_score, opp_score, show_scores)
-    if show_scores
-      if comp_home_away == false
-        return [comp_abbrev, comp_score, opp_abbrev, opp_score]
-      else
-        return [opp_abbrev, opp_score, comp_abbrev, comp_score]
-      end
-    else
-      if comp_home_away == false
-        return [comp_abbrev, opp_abbrev]
-      else
-        return [opp_abbrev, comp_abbrev]
-      end
-    end
   end
 
   #######################################################################
@@ -566,9 +595,11 @@ class TallieLight_UI
         return
       end
 
-      # Handle scoreboard click to unpin team light
-      if webserver.has_arg("unpin-team-light")
-        if global._tallielight != nil
+      # Handle scoreboard click to deactivate team light
+      if webserver.has_arg("deactivate_team_light")
+        var slug = webserver.arg("deactivate_team_light")
+        if global._tallielight != nil && global._tallielight.state.active_event != nil &&
+           global._tallielight.state.active_event.competitor_slug == slug
           global._tallielight.activate_team_light(nil)
         end
         webserver.redirect("/")
@@ -576,8 +607,10 @@ class TallieLight_UI
       end
 
       # Handle scoreboard click to mute team light (■ → ▣)
-      if webserver.has_arg("mute-team-light")
-        if global._tallielight != nil
+      if webserver.has_arg("mute_team_light")
+        var slug = webserver.arg("mute_team_light")
+        if global._tallielight != nil && global._tallielight.state.active_event != nil &&
+           global._tallielight.state.active_event.competitor_slug == slug
           global._tallielight.mute_team_light()
         end
         webserver.redirect("/")
@@ -585,8 +618,8 @@ class TallieLight_UI
       end
 
       # Handle scoreboard click to activate team light
-      if webserver.has_arg("activate-team-light")
-        var team_slug = webserver.arg("activate-team-light")
+      if webserver.has_arg("activate_team_light")
+        var team_slug = webserver.arg("activate_team_light")
         if global._tallielight != nil
           global._tallielight.activate_team_light(team_slug)
         end
