@@ -7,12 +7,14 @@ BUILD_DIR="$SCRIPT_DIR/build"
 
 # Cross-platform in-place sed for macOS (BSD sed) and Linux (GNU sed)
 sed_in_place() {
-  local expr="$1"
-  local file="$2"
+  local file="${@: -1}"
+  local args=("${@:1:$#-1}")
+  local e_args=()
+  for arg in "${args[@]}"; do e_args+=(-e "$arg"); done
   if sed --version >/dev/null 2>&1; then
-    sed -i "$expr" "$file"
+    sed -i "${e_args[@]}" "$file"
   else
-    sed -i '' "$expr" "$file"
+    sed -i '' "${e_args[@]}" "$file"
   fi
 }
 
@@ -22,6 +24,12 @@ SOURCE_FILES=(
   "src/autoexec.be"
   "src/oauth.be"
   "src/tallielight.be"
+  "src/tl_scoreboard_event.be"
+  "src/tl_config.be"
+  "src/tl_saved_light.be"
+  "src/tl_run_state.be"
+  "src/tl_light_controller.be"
+  "src/tl_service.be"
   "src/tallielight_ui.be"
 )
 
@@ -29,6 +37,12 @@ SOURCE_FILES=(
 STRIP_FILES=(
   "oauth.be"
   "tallielight.be"
+  "tl_scoreboard_event.be"
+  "tl_config.be"
+  "tl_saved_light.be"
+  "tl_run_state.be"
+  "tl_light_controller.be"
+  "tl_service.be"
   "tallielight_ui.be"
 )
 
@@ -123,9 +137,9 @@ minify_html() {
     "$SCRIPT_DIR/src/tallielight_ui.html"
 }
 
-# Strip single-line # comments and blank lines from Berry files in build/
+# Strip single-line # comments, blank lines, and print statements from Berry files in build/
 strip_berry() {
-  echo "Stripping Berry files (comments, blank lines)..."
+  echo "Stripping Berry files (comments, blank lines, print statements)..."
   local total_before=0
   local total_after=0
   for file in "${STRIP_FILES[@]}"; do
@@ -133,8 +147,10 @@ strip_berry() {
     local before
     before=$(wc -c < "$path")
     total_before=$((total_before + before))
-    # Remove single-line # comments (but NOT #- block comment delimiters), and blank lines
+    # Remove single-line # comments (but NOT #- block comment delimiters) and blank lines
     sed_in_place '/^[[:space:]]*#[^-]/d; /^[[:space:]]*$/d' "$path"
+    # Remove print(...) statements — accumulate continuation lines until closing ), then delete
+    sed_in_place '/^[[:space:]]*print(/{' ':l' '/)$/!{' 'N' 'bl' '}' 'd' '}' "$path"
     local after
     after=$(wc -c < "$path")
     total_after=$((total_after + after))
@@ -149,6 +165,12 @@ validate_files() {
     "autoexec.be"
     "oauth.be"
     "tallielight.be"
+    "tl_scoreboard_event.be"
+    "tl_config.be"
+    "tl_saved_light.be"
+    "tl_run_state.be"
+    "tl_light_controller.be"
+    "tl_service.be"
     "tallielight_ui.be"
     "tallielight_env.be"
     "tallielight_ui_min.html"

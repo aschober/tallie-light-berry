@@ -15,7 +15,8 @@ if _oa_class != nil
 else
   global._oauth_service = introspect.module("oauth", true)
 end
-global._tallielight_service = introspect.module("tallielight", true)
+var _tl_mod = introspect.module("tallielight", true)
+global._tallielight_service = (_tl_mod != nil) ? _tl_mod : introspect.get(global, 'TallieLightService')
 
 # Capture .tapp archive path for loading template files at runtime
 var _wd = tasmota.wd
@@ -187,7 +188,7 @@ class TallieLight_UI
       if is_active_event
         indicator_color = team_color
         var mode = global._tallielight.state.mode
-        indicator_char = (mode == global._tallielight_service.TL_MUTED) ? "&#9635;" : "&#9632;"
+        indicator_char = (mode == global.TallieLightService.TL_MUTED) ? "&#9635;" : "&#9632;"
       elif is_winning
         indicator_color = team_color
         indicator_char = "&#9633;"
@@ -518,9 +519,15 @@ class TallieLight_UI
     end
 
     print('TLU: ------------------------------')
-    do var m = tasmota.memory() print(format("TLU: mem page-start: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
+    do 
+      var m = tasmota.memory()
+      print(format("TLU: mem page-start: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?")))
+    end
     tasmota.gc()
-    do var m = tasmota.memory() print(format("TLU: mem pre-oauth: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
+    do 
+      var m = tasmota.memory()
+      print(format("TLU: mem pre-oauth: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?")))
+    end
 
     var oauth_data
     do
@@ -539,9 +546,15 @@ class TallieLight_UI
     # end of web page
     webserver.content_stop()
 
-    do var m = tasmota.memory() print(format("TLU: mem post-html: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
+    do 
+      var m = tasmota.memory()
+      print(format("TLU: mem post-html: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?")))
+    end
     tasmota.gc()
-    do var m = tasmota.memory() print(format("TLU: mem post-gc: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?"))) end
+    do 
+      var m = tasmota.memory()
+      print(format("TLU: mem post-gc: heap_free: %s, frag: %s", m.find("heap_free", "?"), m.find("frag", "?")))
+    end
 
   end
 
@@ -631,7 +644,7 @@ class TallieLight_UI
       if webserver.has_arg("update-config")
         print("TLU: Update Config")
         var existing_conf = global._tallielight.config
-        var updated_conf = global._tallielight_service.TLConfig()
+        var updated_conf = global.TLConfig()
         if webserver.has_arg("team-configs")
           try
             updated_conf.team_configs = json.load(webserver.arg("team-configs"))
