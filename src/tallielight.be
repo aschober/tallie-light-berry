@@ -1,6 +1,3 @@
-import strict
-import introspect
-
 #
 # TallieLight Service — module wrapper
 #
@@ -10,16 +7,17 @@ import introspect
 # paths leave the same globals populated before the module exports are built.
 #
 
-var _cls = introspect.get(global, 'TallieLightService')
-if _cls == nil
-  introspect.module("tl_scoreboard_event", true)
-  introspect.module("tl_config", true)
-  introspect.module("tl_saved_light", true)
-  introspect.module("tl_run_state", true)
-  introspect.module("tl_light_controller", true)
-  introspect.module("tl_service", true)
+import strict
+import introspect
+
+if introspect.get(global, 'TallieLightService') == nil
+  import tl_scoreboard_event
+  import tl_config
+  import tl_saved_light
+  import tl_run_state
+  import tl_light_controller
+  import tl_service
 end
-_cls = nil
 
 var TallieLightService = introspect.get(global, 'TallieLightService')
 

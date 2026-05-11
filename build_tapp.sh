@@ -23,6 +23,7 @@ SOURCE_FILES=(
   "manifest.json"
   "src/autoexec.be"
   "src/oauth.be"
+  "src/oa_service.be"
   "src/tallielight.be"
   "src/tl_scoreboard_event.be"
   "src/tl_config.be"
@@ -36,6 +37,7 @@ SOURCE_FILES=(
 # Berry files to strip comments/blank lines from (paths relative to build/)
 STRIP_FILES=(
   "oauth.be"
+  "oa_service.be"
   "tallielight.be"
   "tl_scoreboard_event.be"
   "tl_config.be"
@@ -44,6 +46,24 @@ STRIP_FILES=(
   "tl_light_controller.be"
   "tl_service.be"
   "tallielight_ui.be"
+)
+
+# Files expected in build/ after prepare_build_dir + minify_html + generate_env
+EXPECTED_BUILD_FILES=(
+  "manifest.json"
+  "autoexec.be"
+  "oauth.be"
+  "oa_service.be"
+  "tallielight.be"
+  "tl_scoreboard_event.be"
+  "tl_config.be"
+  "tl_saved_light.be"
+  "tl_run_state.be"
+  "tl_light_controller.be"
+  "tl_service.be"
+  "tallielight_ui.be"
+  "tallielight_env.be"
+  "tallielight_ui_min.html"
 )
 
 # Show usage
@@ -160,30 +180,15 @@ strip_berry() {
 
 # Validate all expected files are present in build/
 validate_files() {
-  local expected=(
-    "manifest.json"
-    "autoexec.be"
-    "oauth.be"
-    "tallielight.be"
-    "tl_scoreboard_event.be"
-    "tl_config.be"
-    "tl_saved_light.be"
-    "tl_run_state.be"
-    "tl_light_controller.be"
-    "tl_service.be"
-    "tallielight_ui.be"
-    "tallielight_env.be"
-    "tallielight_ui_min.html"
-  )
   local missing=0
-  for file in "${expected[@]}"; do
+  for file in "${EXPECTED_BUILD_FILES[@]}"; do
     if [[ ! -f "$BUILD_DIR/$file" ]]; then
       echo "ERROR: Missing required file in build/: $file"
       missing=1
     fi
   done
   if [[ $missing -eq 1 ]]; then exit 1; fi
-  echo "All ${#expected[@]} required files present in build/"
+  echo "All ${#EXPECTED_BUILD_FILES[@]} required files present in build/"
 }
 
 # Create the .tapp archive from build/

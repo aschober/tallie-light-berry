@@ -223,18 +223,22 @@ src/tallielight.be
 ├── LightController
 └── TallieLightService
 
-src/oauth.be
-├── OAuthService (singleton returned by `import oauth`)
+src/oa_service.be
+├── OAuthService (#@ solidify:OAuthService,weak — compiled into firmware when solidified)
 ├── Storage layer (_get / _set_many / read_all_oauth_data)
-│   ├── Persist keys: oa_at, oa_ate, oa_mp, oa_uid, oa_email, oa_rt, oa_did
+│   ├── Persist keys: oa_at, oa_ate, oa_uid, oa_email, oa_rt, oa_did
 │   └── In-memory device-flow state: oa_uc, oa_vuc, oa_dc, oa_dce, oa_pi, oa_err
 ├── HTTP layer (_webclient_post)
 ├── JWT layer (_parse_jwt_payload)
 ├── Flow methods (initiate_authorization_flow / complete_authorization_flow / refresh_access_token_flow)
-└── Status accessors (is_authorized / get_mqtt_username / get_mqtt_password / get_mqtt_client_id)
+└── Status accessors (is_authorized / get_mqtt_username / get_mqtt_client_id)
+
+src/oauth.be
+└── Module wrapper — resolves OAuthService from firmware globals (solidified), falls back to
+    loading oa_service.be from the .tapp archive; returns a singleton instance
 
 src/tallielight_ui.be
-├── Module-level setup (OAuthService + TallieLightService singletons)
+├── Module-level setup (`import oauth` → global._oauth_service; `import tallielight` for service)
 ├── TallieLight_UI driver (Tasmota web driver lifecycle)
 │   ├── init() / unload()
 │   ├── web_add_config_button() — "Tallie Light" button in config menu
@@ -269,7 +273,7 @@ Persist keys (snake_case, not compatible with v1):
 
 ## OAuth / MQTT Reconnection
 
-Authentication uses the OAuth 2.0 Device Authorization Flow (RFC 8628). `oauth.be` is a memory-conscious singleton: long strings (access token JWT, refresh token) stay in `persist` (Tasmota flash) and are only loaded into RAM when needed. Two small fields (`oa_uid`, `oa_ate`) are cached on the instance for zero-flash-hit access on every cron tick and MQTT reconnect. Device-flow transient state (`oa_uc`, `oa_vuc`, `oa_dc`, `oa_dce`, `oa_pi`, `oa_err`) is held in an in-memory map and never persisted.
+Authentication uses the OAuth 2.0 Device Authorization Flow (RFC 8628). `OAuthService` (defined in `oa_service.be`, solidifiable into firmware) is a memory-conscious singleton: long strings (access token JWT, refresh token) stay in `persist` (Tasmota flash) and are only loaded into RAM when needed. Two small fields (`oa_uid`, `oa_ate`) are cached on the instance for zero-flash-hit access on every cron tick and MQTT reconnect. Device-flow transient state (`oa_uc`, `oa_vuc`, `oa_dc`, `oa_dce`, `oa_pi`, `oa_err`) is held in an in-memory map and never persisted. `oauth.be` is a thin module wrapper that resolves the class from firmware globals when solidified, otherwise loads it from the `.tapp` archive.
 
 When an `OAuth=UPDATED` Tasmota rule fires, `TallieLightService` disconnects, registers device to get fresh credentials, and reconnects. In-flight events are not lost — `last_events` persists in memory across reconnects.
 

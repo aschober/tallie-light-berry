@@ -1,22 +1,23 @@
+#
+# TallieLight_UI — Tasmota web driver for TallieLight.
+#
+#   - Renders the scoreboard via web_sensor() on the Tasmota main page.
+#   - Serves the settings page (OAuth flow, team config, light controls).
+#   - Handles POST actions: activate/mute/deactivate team light, OAuth
+#     initiate/poll/refresh, and config save.
+#
+
 import strict
 import string
-import introspect
 import webserver
 import tallielight_env
 import json
+import tallielight
 
-# Use solidified OAuthService if available in firmware, otherwise fall back to .tapp module
-# Store in global so references can be nil'd out during unload to free memory
-var _oa_class = introspect.get(global, 'OAuthService')
-if _oa_class != nil
-  # FOR DEBUG: override oauth service in fw with local .tapp version
-  # global._oauth_service = introspect.module("oauth", true)
-  global._oauth_service = _oa_class()
-else
-  global._oauth_service = introspect.module("oauth", true)
-end
-var _tl_mod = introspect.module("tallielight", true)
-global._tallielight_service = (_tl_mod != nil) ? _tl_mod : introspect.get(global, 'TallieLightService')
+# Publish oauth singleton to global — tl_service.be reads it directly,
+# and unload() nils it to free memory.
+import oauth
+global._oauth_service = oauth
 
 # Capture .tapp archive path for loading template files at runtime
 var _wd = tasmota.wd
@@ -49,11 +50,11 @@ class TallieLight_UI
     # print(format("TLU: RTC at init: %s", rtc))
     if (rtc["utc"] != nil && rtc["utc"] > 1000000000)
       # RTC initialized, safe to start service
-      tasmota.defer(def () global._tallielight_service.run_from_conf() end)
+      tasmota.defer(def () tallielight.run_from_conf() end)
     else
       # RTC not initialized yet, add rule to start service once time is ready
       tasmota.add_rule_once("Time#Initialized", def ()
-        global._tallielight_service.run_from_conf()
+        tallielight.run_from_conf()
       end, "tallielight_run")
     end
   end
@@ -69,7 +70,7 @@ class TallieLight_UI
     tasmota.remove_rule("Time#Initialized", "tallielight_run")
 
     # Stop the TallieLight service
-    global._tallielight_service.unload()
+    tallielight.unload()
     # Stop the OAuth service
     global._oauth_service.unload()
 
@@ -84,7 +85,6 @@ class TallieLight_UI
     global._tallielight_ui = nil
     global._tallielight = nil
     global._oauth_service = nil
-    global._tallielight_service = nil
 
     print("TLU: TallieLight extension unloaded")
   end
@@ -501,7 +501,7 @@ class TallieLight_UI
 
     # if TallieLightService is not running, try to start it
     if (global._tallielight == nil)
-      global._tallielight_service.run_from_conf()
+      tallielight.run_from_conf()
     end
 
     # read configuration
@@ -677,9 +677,9 @@ class TallieLight_UI
         if changed
           print("TLU: Config changed, updating…")
           # print(format("%s", updatedConf.tostring()))
-          global._tallielight_service.persist_conf(updated_conf)
-          global._tallielight_service.unload()
-          global._tallielight_service.run_from_conf()
+          tallielight.persist_conf(updated_conf)
+          tallielight.unload()
+          tallielight.run_from_conf()
         else
           print("TLU: No changes detected in config")
         end
