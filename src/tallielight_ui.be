@@ -10,14 +10,15 @@
 import strict
 import string
 import webserver
-import tallielight_env
 import json
-import tallielight
-
-# Publish oauth singleton to global — tl_service.be reads it directly,
-# and unload() nils it to free memory.
-import oauth
-global._oauth_service = oauth
+import introspect
+var tallielight_env = introspect.module('tallielight_env', true)
+var tallielight     = introspect.module('tallielight', true)
+var oauth           = introspect.module('oauth', true)
+# Pin singletons to globals so tl_service.be can reach them.
+# global.undef() in unload() releases these references for GC.
+global._oauth           = oauth
+global._tallielight_env = tallielight_env
 
 # Capture .tapp archive path for loading template files at runtime
 var _wd = tasmota.wd
@@ -72,7 +73,7 @@ class TallieLight_UI
     # Stop the TallieLight service
     tallielight.unload()
     # Stop the OAuth service
-    global._oauth_service.unload()
+    oauth.unload()
 
     # Remove web handlers
     webserver.remove_route("/tl", webserver.HTTP_GET)
@@ -83,8 +84,17 @@ class TallieLight_UI
 
     # Clear all global references to allow GC to free module memory
     global._tallielight_ui = nil
-    global._tallielight = nil
-    global._oauth_service = nil
+
+    # Undef class globals so GC can reclaim class objects and their bytecode
+    global.undef('_oauth')
+    global.undef('_tallielight_env')
+    global.undef('OAuthService')
+    global.undef('TallieLightService')
+    global.undef('TLScoreboardEvent')
+    global.undef('TLConfig')
+    global.undef('TLSavedLight')
+    global.undef('TLRunState')
+    global.undef('TLLightController')
 
     print("TLU: TallieLight extension unloaded")
   end
@@ -109,7 +119,7 @@ class TallieLight_UI
   # Callback method to add a badge to top right of home page
   ##############################################################################
   # def web_status_line_right()
-  #   if (global._oauth_service.is_authorized(false))
+  #   if (oauth.is_authorized(false))
   #       webserver.content_status_sticker("SPORTS")
   #   end
   # end
@@ -118,14 +128,14 @@ class TallieLight_UI
   # Callback method to display sensor information on the main Web UI
   ##############################################################################
   def web_sensor()
-    if (global._tallielight == nil)
+    if (tallielight.get() == nil)
       self._send_centered_message("Tallie Light not running")
       return
     end
 
     # Check OAuth authorization status
-    var is_oauth_authorized = global._oauth_service.is_authorized(false)
-    var is_mqtt_connected = (global._tallielight.mqtt != nil && global._tallielight.mqtt.connected())
+    var is_oauth_authorized = oauth.is_authorized(false)
+    var is_mqtt_connected = (tallielight.get().mqtt != nil && tallielight.get().mqtt.connected())
 
     # Handle OAuth/connection status
     if !is_oauth_authorized
@@ -139,7 +149,7 @@ class TallieLight_UI
     end
 
     # Get all configured teams and their scoreboard displays
-    var team_configs = global._tallielight.config.team_configs
+    var team_configs = tallielight.get().config.team_configs
 
     if team_configs == nil || team_configs.size() == 0
       self._send_centered_message("No Teams Configured")
@@ -147,7 +157,7 @@ class TallieLight_UI
     end
 
     # Store active slug on table element for JS click handlers to initialize from
-    var active_slug = (global._tallielight.state.active_event != nil) ? global._tallielight.state.active_event.competitor_slug : ''
+    var active_slug = (tallielight.get().state.active_event != nil) ? tallielight.get().state.active_event.competitor_slug : ''
 
     # Start the scoreboard table
     webserver.content_send(format("<table id='slt' data-active-slug='%s' style='width:100%%'>", active_slug))
@@ -159,7 +169,7 @@ class TallieLight_UI
     var teams_with_events = []
     for i: 0..team_configs.size()-1
       var team_slug = team_configs[i]['teamSlug']
-      if global._tallielight.last_events.contains(team_slug)
+      if tallielight.get().last_events.contains(team_slug)
         teams_with_events.push(i)
       end
     end
@@ -173,12 +183,12 @@ class TallieLight_UI
       var team_color = team_configs[i].find('selectedColor', '#000000')
 
       # Get the team event (we know it exists since we filtered in first pass)
-      var team_event = global._tallielight.last_events[team_slug]
+      var team_event = tallielight.get().last_events[team_slug]
       var team_league = team_event.league_short_display_name != nil ? team_event.league_short_display_name : ''
 
       var is_winning = (team_event != nil && team_event.is_winning())
-      var is_active_event = (global._tallielight.state.active_event != nil &&
-                             global._tallielight.state.active_event.competitor_slug == team_slug)
+      var is_active_event = (tallielight.get().state.active_event != nil &&
+                             tallielight.get().state.active_event.competitor_slug == team_slug)
 
       # ■ (&#9632) filled square = active + light on (TL_SOLID/TL_ANIM)
       # ▣ (&#9635) square with fill = active + light off (TL_MUTED)
@@ -187,7 +197,7 @@ class TallieLight_UI
       var indicator_char = nil
       if is_active_event
         indicator_color = team_color
-        var mode = global._tallielight.state.mode
+        var mode = tallielight.get().state.mode
         indicator_char = (mode == global.TallieLightService.TL_MUTED) ? "&#9635;" : "&#9632;"
       elif is_winning
         indicator_color = team_color
@@ -500,12 +510,12 @@ class TallieLight_UI
     if !webserver.check_privileged_access() return nil end
 
     # if TallieLightService is not running, try to start it
-    if (global._tallielight == nil)
+    if (tallielight.get() == nil)
       tallielight.run_from_conf()
     end
 
     # read configuration
-    var conf = global._tallielight.config
+    var conf = tallielight.get().config
     if conf == nil
       # title of the web page
       webserver.content_start("Tallie Light")
@@ -531,7 +541,7 @@ class TallieLight_UI
 
     var oauth_data
     do
-      var _od = global._oauth_service.read_all_oauth_data()
+      var _od = oauth.read_all_oauth_data()
       oauth_data = self._build_oauth_payload(_od)
     end
     # _od is now out of scope — Berry scope exit makes it collectable.
@@ -569,13 +579,13 @@ class TallieLight_UI
       # long JWT token inline; JS calls this only when it actually needs to authorize
       # a backend API request and then the token is gc'd. Returns 401 when no valid token.
       if webserver.has_arg("get-token")
-        if !global._oauth_service.is_authorized(false)
+        if !oauth.is_authorized(false)
           webserver.content_open(401, "application/json")
           webserver.content_send('{"error":"unauthorized"}')
           webserver.content_close()
           return
         end
-        var token = global._oauth_service.read_all_oauth_data().find("oa_at")
+        var token = oauth.read_all_oauth_data().find("oa_at")
         webserver.content_open(200, "application/json")
         webserver.content_send(format("{\"oa_at\":\"%s\"}", token))
         webserver.content_close()
@@ -594,10 +604,10 @@ class TallieLight_UI
         # "missing device_code" error to oa_err.
         var payload
         do
-          var od = global._oauth_service.read_all_oauth_data()
+          var od = oauth.read_all_oauth_data()
           if od.find("oa_dc") != nil
-            global._oauth_service.complete_authorization_flow()
-            od = global._oauth_service.read_all_oauth_data()
+            oauth.complete_authorization_flow()
+            od = oauth.read_all_oauth_data()
           end
           payload = json.dump(self._build_oauth_payload(od))
         end
@@ -611,9 +621,9 @@ class TallieLight_UI
       # Handle scoreboard click to deactivate team light
       if webserver.has_arg("deactivate_team_light")
         var slug = webserver.arg("deactivate_team_light")
-        if global._tallielight != nil && global._tallielight.state.active_event != nil &&
-           global._tallielight.state.active_event.competitor_slug == slug
-          global._tallielight.activate_team_light(nil)
+        if tallielight.get() != nil && tallielight.get().state.active_event != nil &&
+           tallielight.get().state.active_event.competitor_slug == slug
+          tallielight.get().activate_team_light(nil)
         end
         webserver.redirect("/")
         return
@@ -622,9 +632,9 @@ class TallieLight_UI
       # Handle scoreboard click to mute team light (■ → ▣)
       if webserver.has_arg("mute_team_light")
         var slug = webserver.arg("mute_team_light")
-        if global._tallielight != nil && global._tallielight.state.active_event != nil &&
-           global._tallielight.state.active_event.competitor_slug == slug
-          global._tallielight.mute_team_light()
+        if tallielight.get() != nil && tallielight.get().state.active_event != nil &&
+           tallielight.get().state.active_event.competitor_slug == slug
+          tallielight.get().mute_team_light()
         end
         webserver.redirect("/")
         return
@@ -633,8 +643,8 @@ class TallieLight_UI
       # Handle scoreboard click to activate team light
       if webserver.has_arg("activate_team_light")
         var team_slug = webserver.arg("activate_team_light")
-        if global._tallielight != nil
-          global._tallielight.activate_team_light(team_slug)
+        if tallielight.get() != nil
+          tallielight.get().activate_team_light(team_slug)
         end
         webserver.redirect("/")
         return
@@ -643,7 +653,7 @@ class TallieLight_UI
       # Handle Tallie Light configuration update
       if webserver.has_arg("update-config")
         print("TLU: Update Config")
-        var existing_conf = global._tallielight.config
+        var existing_conf = tallielight.get().config
         var updated_conf = global.TLConfig()
         if webserver.has_arg("team-configs")
           try
@@ -693,18 +703,18 @@ class TallieLight_UI
         var action = webserver.arg("oa-action")
         print(format("TLU: Action Start - %s", action))
         if (action == "initiate")
-          global._oauth_service.initiate_authorization_flow()
+          oauth.initiate_authorization_flow()
         elif (action == "complete")
-          global._oauth_service.complete_authorization_flow()
+          oauth.complete_authorization_flow()
         elif (action == "refresh")
-          global._oauth_service.refresh_access_token_flow()
+          oauth.refresh_access_token_flow()
         elif (action == "clear_pending")
-          global._oauth_service.clear_pending_oauth_data()
+          oauth.clear_pending_oauth_data()
         elif (action == "clear_all")
-          if global._tallielight != nil
-            global._tallielight._stop()
+          if tallielight.get() != nil
+            tallielight.get()._stop()
           end
-          global._oauth_service.delete_all_oauth_data()
+          oauth.delete_all_oauth_data()
         else
           print(format("TLU: Unknown action '%s'", str(action)))
         end

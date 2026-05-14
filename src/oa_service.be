@@ -12,6 +12,8 @@
 
 #@ solidify:OAuthService,weak
 class OAuthService
+  static VERSION = 0x01020000  # stamped by build_tapp.sh
+  
   var device_id              # cached device id — never changes after first boot
   var _cached_uid            # cached user id — used on every MQTT (re)connect
   var _cached_token_expiry   # cached token expiry — used on every is_authorized cron tick
@@ -306,7 +308,7 @@ class OAuthService
 
   def initiate_authorization_flow()
     import json
-    import tallielight_env
+    var tallielight_env = global._tallielight_env
     self._log("initiating Device Authorization Flow")
     self.clear_pending_oauth_data()
 
@@ -347,7 +349,7 @@ class OAuthService
 
   def complete_authorization_flow()
     import json
-    import tallielight_env
+    var tallielight_env = global._tallielight_env
     self._log("polling /oauth2/token for completed authorization")
 
     var log_header = "POST /oauth2/token"
@@ -404,7 +406,7 @@ class OAuthService
 
   def refresh_access_token_flow()
     import json
-    import tallielight_env
+    var tallielight_env = global._tallielight_env
     self._log("refreshing access token")
     var log_header = "POST /oauth2/token refresh"
 

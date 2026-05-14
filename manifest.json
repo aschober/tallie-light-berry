@@ -1,6 +1,6 @@
 {
-  "name": "TallieLight",
-  "version": "0x01000000",
+  "name": "Tallie Light",
+  "version": "0x01020000",
   "description": "Change the light when your favorite team is winning.",
   "author": "Allen Schober"
 }

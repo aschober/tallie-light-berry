@@ -130,8 +130,11 @@ generate_env() {
   local source_desc="env vars"
   [[ -f "$ENV_FILE" ]] && source_desc="${ENV}.env (with env var overrides)"
   echo "Generating tallielight_env.be from ${source_desc}..."
+  local tapp_version
+  tapp_version=$(read_version)
   {
     echo "var tallielight_env = module(\"tallielight_env\")"
+    echo "tallielight_env.VERSION = ${tapp_version}"
     for key in $known_keys; do
       local value=""
       # Prefer environment variable
@@ -147,6 +150,20 @@ generate_env() {
     done
     echo "return tallielight_env"
   } > "$BUILD_DIR/tallielight_env.be"
+}
+
+# Stamp the VERSION static in src/ files so both the tapp and solidified firmware stay in sync
+stamp_version() {
+  local hex_version
+  hex_version=$(read_version)
+  local files=("src/oa_service.be" "src/tl_service.be")
+  for file in "${files[@]}"; do
+    local path="$SCRIPT_DIR/$file"
+    if [[ -f "$path" ]]; then
+      sed_in_place "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = ${hex_version}/" "$path"
+    fi
+  done
+  echo "Stamped VERSION = ${hex_version} into ${files[*]}"
 }
 
 # Minify HTML into build/
@@ -239,6 +256,7 @@ if [[ -n "$VERSION_ARG" ]]; then
 fi
 
 prepare_build_dir
+stamp_version
 minify_html
 generate_env
 strip_berry
