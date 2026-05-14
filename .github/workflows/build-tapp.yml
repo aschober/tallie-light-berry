@@ -1,0 +1,66 @@
+name: Build TallieLight TAPP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "build_tapp.sh"
+      - "manifest.json"
+      - "src/**"
+      - ".github/workflows/build-tapp.yml"
+
+jobs:
+  build-tapp:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    env:
+      OAUTH_DOMAIN: ${{ secrets.OAUTH_DOMAIN }}
+      OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install minify CLI
+        run: |
+          go install github.com/tdewolff/minify/v2/cmd/minify@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for key in OAUTH_DOMAIN OAUTH_CLIENT_ID BACKEND_URL; do
+            if [ -z "${!key}" ]; then
+              echo "::error::$key is not set. Add it as a repository secret."
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Build tapp
+        run: ./build_tapp.sh ${{ matrix.environment }}
+
+      - name: Rename tapp artifact
+        run: |
+          src="TallieLight-${{ matrix.environment }}.tapp"
+          dst=${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+
+      - name: Upload tapp artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.environment == 'prod' && 'TallieLight' || 'TallieLight-dev' }}
+          path: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          if-no-files-found: error

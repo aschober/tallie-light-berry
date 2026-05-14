@@ -1,6 +1,6 @@
 # Test harness for tallielight.be.
 #   Installs fakes for the Tasmota globals (tasmota, light, mqttclient,
-#   global._oauth_service) and exposes helpers to drive scenarios.
+#   global._oauth, global._tallielight_env) and exposes helpers to drive scenarios.
 #
 #   Usage:
 #     import harness
@@ -13,6 +13,7 @@
 
 import global
 import string
+import tallielight_env  # sets global._tallielight_env for src/ code that reads it
 
 var harness = module('harness')
 
@@ -256,6 +257,7 @@ class _WebClient
   def PUT(payload)  return self._send('PUT',  payload) end
   var _last_body
   def get_string() return self._last_body != nil ? self._last_body : "" end
+  def set_timeouts(conn_ms, read_ms) end
   def close() end
 end
 
@@ -281,7 +283,7 @@ end
 global.tasmota = _Tasmota()
 global.light = _Light()
 global.mqttclient = _MqttClient
-global._oauth_service = _OAuthService()
+global._oauth = _OAuthService()
 
 global._setoption20 = false  # tracks SetOption20 state for color application
 global.webclient = _webclient_factory

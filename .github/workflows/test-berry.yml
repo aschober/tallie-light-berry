@@ -1,0 +1,51 @@
+name: Berry Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "tests/berry/**"
+      - ".github/workflows/test-berry.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/berry/**"
+      - ".github/workflows/test-berry.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Tasmota HEAD SHA (for cache key)
+        id: tasmota-sha
+        run: |
+          sha=$(git ls-remote https://github.com/arendst/Tasmota HEAD | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Cache berry binary
+        id: cache-berry
+        uses: actions/cache@v4
+        with:
+          path: berry-bin/berry
+          key: berry-${{ steps.tasmota-sha.outputs.sha }}-${{ runner.os }}
+
+      - name: Build berry interpreter
+        if: steps.cache-berry.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 https://github.com/arendst/Tasmota tasmota-src
+          cd tasmota-src/lib/libesp32/berry
+          make -j"$(nproc)"
+          mkdir -p "$GITHUB_WORKSPACE/berry-bin"
+          cp berry "$GITHUB_WORKSPACE/berry-bin/berry"
+
+      - name: Add berry to PATH
+        run: echo "$GITHUB_WORKSPACE/berry-bin" >> "$GITHUB_PATH"
+
+      - name: Run Berry tests
+        run: bash tests/berry/run_tests.sh

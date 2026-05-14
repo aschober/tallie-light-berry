@@ -8,7 +8,11 @@
 import global
 import harness
 import json
-import tallielight as sl
+import tallielight as tl  # loads tl_*.be classes into global.*
+
+var TLConfig           = global.TLConfig
+var TLSavedLight       = global.TLSavedLight
+var TallieLightService = global.TallieLightService
 
 var passed = 0
 var failed = 0
@@ -49,14 +53,14 @@ def make_service(turn_on_light)
   if turn_on_light == nil turn_on_light = true end
   harness.reset()
   harness.enqueue_topics_response(['sports-lamp/nyy', 'sports-lamp/bos'], nil, nil)
-  var c = sl.TLConfig()
+  var c = TLConfig()
   c.team_configs = [
     {'teamSlug': 'nyy', 'selectedColor': '#002d72'},
     {'teamSlug': 'bos', 'selectedColor': '#bd3039'},
   ]
   c.turn_on_light = turn_on_light
   c.light_restore_mins = 60
-  return sl.TallieLightService(c)
+  return TallieLightService(c)
 end
 
 # Deliver an event JSON through the MQTT pathway
@@ -75,7 +79,7 @@ end
 def test_01_no_events()
   current_test = 'T1'
   var svc = make_service(true)
-  expect("mode IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE", svc.state.mode, TallieLightService.TL_IDLE)
   expect("no active event", svc.state.active_event, nil)
 end
 
@@ -85,7 +89,7 @@ def test_02_scheduled_only()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'pre', '0', '0', nil, 1700000000)
-  expect("mode stays IDLE on pre", svc.state.mode, sl.TL_IDLE)
+  expect("mode stays IDLE on pre", svc.state.mode, TallieLightService.TL_IDLE)
   expect_nil("no active event", svc.state.active_event)
 end
 
@@ -95,7 +99,7 @@ def test_03_losing()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '1', '3', nil, 1700000000)
-  expect("mode IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 4: In-progress tied ──────────────────────────────────
@@ -104,7 +108,7 @@ def test_04_tied()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '2', '2', nil, 1700000000)
-  expect("mode IDLE (tied)", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE (tied)", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 5: Final lost ────────────────────────────────────────
@@ -113,7 +117,7 @@ def test_05_final_lost()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'post', '1', '5', false, 1700000000)
-  expect("mode IDLE (lost)", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE (lost)", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 6: Event timed out ──────────────────────────────────
@@ -123,7 +127,7 @@ def test_06_timeout_filter()
   # Event is winning but its last_updated + 60min < now
   harness.set_clock(1700000000 + 60 * 60 + 100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("mode IDLE (timed out)", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE (timed out)", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 7: Single in-progress winner ─────────────────────────
@@ -132,7 +136,7 @@ def test_07_single_inprogress_winner()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("mode ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("mode ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   expect("active slug", svc.state.active_event.competitor_slug, 'nyy')
   expect_true("Color2 sent", harness.cmd_sent("Color2 002d72"))
   expect_not_nil("animation set", svc.state.animation)
@@ -144,7 +148,7 @@ def test_08_single_final_winner()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'post', '5', '3', true, 1700000000)
-  expect("mode SOLID", svc.state.mode, sl.TL_SOLID)
+  expect("mode SOLID", svc.state.mode, TallieLightService.TL_SOLID)
   expect_true("Color2 sent", harness.cmd_sent("Color2 002d72"))
   expect_nil("no animation", svc.state.animation)
 end
@@ -169,7 +173,7 @@ def test_10_live_beats_final()
   expect("NYY final active", svc.state.active_event.competitor_slug, 'nyy')
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   expect("BOS live takes over", svc.state.active_event.competitor_slug, 'bos')
-  expect("now TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("now TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
 end
 
 # ── 11: Final-only winners ranked by config order ────────
@@ -235,7 +239,7 @@ def test_15_pinned_no_event()
   harness.set_clock(1700000100)
   deliver(svc, 'bos', 'BOS', 'in', '0', '5', nil, 1700000000)
   expect("pin cleared (no event)", svc.state.pinned_slug, nil)
-  expect("mode IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 16: Pin set while another active → transition ───────
@@ -262,12 +266,12 @@ def test_16b_repin_no_spurious_hsb()
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
   svc.activate_team_light('nyy')
   settle_change_detection()
-  expect("NYY pinned and ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("NYY pinned and ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   # Pin BOS (different color) — should switch to BOS without going through TL_IDLE
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   svc.activate_team_light('bos')
   expect("BOS now active", svc.state.active_event.competitor_slug, 'bos')
-  expect("mode is ANIM not IDLE", svc.state.mode, sl.TL_ANIM)
+  expect("mode is ANIM not IDLE", svc.state.mode, TallieLightService.TL_ANIM)
 end
 
 # ── 16c: Unpin secondary pin — HSB rule must not fire ────
@@ -283,11 +287,11 @@ def test_16c_unpin_secondary_no_spurious_hsb()
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   svc.activate_team_light('bos')
   settle_change_detection()
-  expect("BOS pinned and ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("BOS pinned and ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   expect("saved_light exists", svc.config.saved_light != nil, true)
   # Unpin — should go to TL_MUTED with NYY, color staged via light.set() (power off)
   svc.activate_team_light(nil)
-  expect("mode is MUTED not IDLE", svc.state.mode, sl.TL_MUTED)
+  expect("mode is MUTED not IDLE", svc.state.mode, TallieLightService.TL_MUTED)
   expect("NYY is now active", svc.state.active_event.competitor_slug, 'nyy')
   expect("saved_light preserved", svc.config.saved_light != nil, true)
   expect("light power off after unpin", global.light._state['power'], false)
@@ -304,7 +308,7 @@ def test_17_unpin_with_winner_still_active()
   expect("BOS pinned", svc.state.pinned_slug, 'bos')
   svc.activate_team_light(nil)
   expect("pin cleared", svc.state.pinned_slug, nil)
-  expect("mode TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("mode TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect("BOS still active event", svc.state.active_event.competitor_slug, 'bos')
   # color staged via light.set() — light is off, BOS color is staged
   expect("light power off after unpin", global.light._state['power'], false)
@@ -324,11 +328,11 @@ def test_17c_unpin_muted_then_power_on_reactivates()
   svc.activate_team_light('bos')  # pin BOS → TL_SOLID (different color)
   svc.activate_team_light(nil)    # unpin → NYY still active → TL_MUTED
   settle_change_detection()
-  expect("TL_MUTED before power-on", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED before power-on", svc.state.mode, TallieLightService.TL_MUTED)
   expect("NYY color staged", svc.state.team_color_rgb, '002d72')  # NYY selectedColor
   harness.fire_rule("Power1#State", 1, nil)  # user powers light on
   settle_change_detection()
-  expect("mode TL_ANIM after power-on", svc.state.mode, sl.TL_ANIM)
+  expect("mode TL_ANIM after power-on", svc.state.mode, TallieLightService.TL_ANIM)
   expect("NYY active", svc.state.active_event.competitor_slug, 'nyy')
 end
 
@@ -342,7 +346,7 @@ def test_17b_unpin_restores_when_no_winners()
   deliver(svc, 'bos', 'BOS', 'in', '1', '5', nil, 1700000050)  # BOS now losing
   svc.activate_team_light(nil)
   expect("pin cleared", svc.state.pinned_slug, nil)
-  expect("mode IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("mode IDLE", svc.state.mode, TallieLightService.TL_IDLE)
   expect("no active event", svc.state.active_event, nil)
 end
 
@@ -354,9 +358,9 @@ def test_17d_activate_then_mute()
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   svc.activate_team_light('bos')          # □→■
   settle_change_detection()
-  expect("TL_ANIM after pin", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM after pin", svc.state.mode, TallieLightService.TL_ANIM)
   svc.mute_team_light()                   # ■→▣
-  expect("TL_MUTED after mute", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED after mute", svc.state.mode, TallieLightService.TL_MUTED)
   expect("pin preserved", svc.state.pinned_slug, 'bos')
   expect("active event preserved", svc.state.active_event.competitor_slug, 'bos')
   expect("light off", global.light._state['power'], false)
@@ -370,11 +374,11 @@ def test_17e_mute_unpinned_auto_winner()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)  # auto-selected, no pin
-  expect("TL_ANIM no pin", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM no pin", svc.state.mode, TallieLightService.TL_ANIM)
   expect("no pin", svc.state.pinned_slug, nil)
   settle_change_detection()
   svc.mute_team_light()                   # ■→▣
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect("still no pin", svc.state.pinned_slug, nil)
   expect("BOS still active", svc.state.active_event.competitor_slug, 'bos')
   expect("light off", global.light._state['power'], false)
@@ -389,9 +393,9 @@ def test_17f_unpin_while_muted_restores()
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   svc.activate_team_light('bos')          # □→■
   svc.mute_team_light()                   # ■→▣
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   svc.activate_team_light(nil)            # ▣→□
-  expect("TL_IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE", svc.state.mode, TallieLightService.TL_IDLE)
   expect("pin cleared", svc.state.pinned_slug, nil)
   expect("no active event", svc.state.active_event, nil)
 end
@@ -405,9 +409,9 @@ def test_17g_power_off_muted_then_unpin_restores()
   settle_change_detection()
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)   # power-off → TL_MUTED
-  expect("TL_MUTED via power-off", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED via power-off", svc.state.mode, TallieLightService.TL_MUTED)
   svc.activate_team_light(nil)                # ▣→□
-  expect("TL_IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE", svc.state.mode, TallieLightService.TL_IDLE)
   expect("no active event", svc.state.active_event, nil)
 end
 
@@ -417,12 +421,12 @@ def test_18_power_off_during_anim()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   settle_change_detection()
   # User turns light off
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect_not_nil("event preserved", svc.state.active_event)
   expect("saved_light.power false after power-off", svc.config.saved_light.power, false)
 end
@@ -433,11 +437,11 @@ def test_19_power_off_during_solid()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'post', '5', '3', true, 1700000000)
-  expect("TL_SOLID", svc.state.mode, sl.TL_SOLID)
+  expect("TL_SOLID", svc.state.mode, TallieLightService.TL_SOLID)
   settle_change_detection()
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect("saved_light.power false after power-off", svc.config.saved_light.power, false)
 end
 
@@ -449,7 +453,7 @@ def test_20_inprogress_light_off_no_auto_on()
   global._setoption20 = true
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect("NYY color staged via light.set", global.light._state['rgb'], '002d72')
   expect("light still off", global.light._state['power'], false)
   expect("saved_light.power false (light was already off)", svc.config.saved_light.power, false)
@@ -463,7 +467,7 @@ def test_21_final_light_off_no_auto_on()
   global._setoption20 = true
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'post', '5', '3', true, 1700000000)
-  expect("TL_MUTED (final)", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED (final)", svc.state.mode, TallieLightService.TL_MUTED)
   expect("NYY color staged via light.set", global.light._state['rgb'], '002d72')
   expect("light still off", global.light._state['power'], false)
   expect("saved_light.power false (light was already off)", svc.config.saved_light.power, false)
@@ -477,12 +481,12 @@ def test_22_power_on_muted_inprogress()
   global._setoption20 = true
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   settle_change_detection()  # register light_change_rules via deferred timer
   # User powers on
   global.light._state['power'] = true
   harness.fire_rule("Power1#State", 1, nil)
-  expect("TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
 end
 
 # ── 22b: Power on while muted updates saved_light.power → true ───
@@ -496,12 +500,12 @@ def test_22b_power_on_muted_updates_saved_light()
   settle_change_detection()
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("TL_MUTED", svc.state.mode, sl.TL_MUTED)
+  expect("TL_MUTED", svc.state.mode, TallieLightService.TL_MUTED)
   expect("saved_light.power false after power-off", svc.config.saved_light.power, false)
   # User manually powers light back on
   global.light._state['power'] = true
   harness.fire_rule("Power1#State", 1, nil)
-  expect("TL_ANIM after power-on", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM after power-on", svc.state.mode, TallieLightService.TL_ANIM)
   expect("saved_light.power true after power-on", svc.config.saved_light.power, true)
 end
 
@@ -515,11 +519,11 @@ def test_23_power_on_muted_final()
   # Power off → muted
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("muted", svc.state.mode, sl.TL_MUTED)
+  expect("muted", svc.state.mode, TallieLightService.TL_MUTED)
   # Power on → re-activate
   global.light._state['power'] = true
   harness.fire_rule("Power1#State", 1, nil)
-  expect("TL_SOLID", svc.state.mode, sl.TL_SOLID)
+  expect("TL_SOLID", svc.state.mode, TallieLightService.TL_SOLID)
 end
 
 # ── 24: Manual pin overrides muted ───────────────────────
@@ -531,12 +535,12 @@ def test_24_pin_overrides_muted()
   settle_change_detection()
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("muted", svc.state.mode, sl.TL_MUTED)
+  expect("muted", svc.state.mode, TallieLightService.TL_MUTED)
   # User pins BOS (also winning)
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000000)
   global.light._state['power'] = true  # simulate pin power-on
   svc.activate_team_light('bos')
-  expect("TL_ANIM with BOS", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM with BOS", svc.state.mode, TallieLightService.TL_ANIM)
   expect("BOS active", svc.state.active_event.competitor_slug, 'bos')
 end
 
@@ -549,14 +553,14 @@ def test_25_timeout_while_muted()
   settle_change_detection()
   global.light._state['power'] = false
   harness.fire_rule("Power1#State", 0, nil)
-  expect("muted", svc.state.mode, sl.TL_MUTED)
+  expect("muted", svc.state.mode, TallieLightService.TL_MUTED)
   # Advance clock and fire the timeout
   harness.set_clock(1700000000 + 60 * 60 + 100)
   # Update event so it's now timed out
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)  # same lastUpdated
   # Fire the timeout timer
   harness.fire_timer("handle_event_timeout")
-  expect("TL_IDLE after timeout", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE after timeout", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 26: New MQTT update while muted → stays muted, restages color ──
@@ -572,7 +576,7 @@ def test_26_update_while_muted()
   global.tasmota._cmds = []
   # NYY gets a newer update — active_event should update, light unchanged
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000050)
-  expect("still muted", svc.state.mode, sl.TL_MUTED)
+  expect("still muted", svc.state.mode, TallieLightService.TL_MUTED)
   expect("active_event updated", svc.state.active_event.last_updated, 1700000050)
   expect("no light commands sent", size(harness.cmds()), 0)
 end
@@ -598,10 +602,10 @@ def test_28_newer_timestamp()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   # Same team, newer timestamp, same status — should refresh timer but not change light
   deliver(svc, 'nyy', 'NYY', 'in', '6', '1', nil, 1700000050)
-  expect("still TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("still TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   expect("active event timestamp updated", svc.state.active_event.last_updated, 1700000050)
 end
 
@@ -611,10 +615,10 @@ def test_29_inprogress_to_final()
   var svc = make_service(true)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_ANIM first", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM first", svc.state.mode, TallieLightService.TL_ANIM)
   expect_not_nil("animation active", svc.state.animation)
   deliver(svc, 'nyy', 'NYY', 'post', '5', '3', true, 1700000050)
-  expect("TL_SOLID after final", svc.state.mode, sl.TL_SOLID)
+  expect("TL_SOLID after final", svc.state.mode, TallieLightService.TL_SOLID)
   expect_nil("animation cleared", svc.state.animation)
 end
 
@@ -629,7 +633,7 @@ def test_30_hue_change()
   var team_hue = int(svc.state.team_color_map['hue'])
   var new_hue = (team_hue + 100) % 360
   harness.fire_rule("HSBColor", format("%d,50,80", new_hue), nil)
-  expect("TL_IDLE after hue change", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE after hue change", svc.state.mode, TallieLightService.TL_IDLE)
   expect("saved_light cleared", svc.config.saved_light, nil)
 end
 
@@ -643,7 +647,7 @@ def test_31_sat_change()
   # Send same hue with sat=10 (very different)
   var team_hue = int(svc.state.team_color_map['hue'])
   harness.fire_rule("HSBColor", format("%d,10,80", team_hue), nil)
-  expect("TL_IDLE after sat change", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE after sat change", svc.state.mode, TallieLightService.TL_IDLE)
 end
 
 # ── 32: Brightness-only change in TL_ANIM ────────────────
@@ -651,12 +655,12 @@ def test_32_bri_only_anim()
   current_test = 'T32'
   harness.reset()
   harness.enqueue_topics_response(['sports-lamp/nyy', 'sports-lamp/bos'], nil, nil)
-  var c = sl.TLConfig()
+  var c = TLConfig()
   c.team_configs = [{'teamSlug': 'nyy', 'selectedColor': '#002d72'}, {'teamSlug': 'bos', 'selectedColor': '#bd3039'}]
   c.turn_on_light = true
   c.light_restore_mins = 60
   c.animation_type = 'breathe'
-  var svc = sl.TallieLightService(c)
+  var svc = TallieLightService(c)
   harness.set_clock(1700000100)
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
   settle_change_detection()
@@ -665,9 +669,9 @@ def test_32_bri_only_anim()
   var team_sat_100 = int((team_sat * 100) / 255)
   # Change only brightness
   harness.fire_rule("HSBColor", format("%d,%d,30", team_hue, team_sat_100), nil)
-  expect("still TL_ANIM", svc.state.mode, sl.TL_ANIM)
-  # bri 30/100 → 76/255; max_brightness = 76 + 32 = 108
-  expect("anim max_brightness updated", svc.state.animation.max_brightness, 108)
+  expect("still TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
+  # bri 30/100 → 76/255; _calc_breathe_brightness(76) → [64, 255]
+  expect("anim max_brightness updated", svc.state.animation.max_brightness, 255)
 end
 
 # ── 33: Brightness-only change in TL_SOLID ───────────────
@@ -681,7 +685,7 @@ def test_33_bri_only_solid()
   var team_sat = int(svc.state.team_color_map['sat'])
   var team_sat_100 = int((team_sat * 100) / 255)
   harness.fire_rule("HSBColor", format("%d,%d,40", team_hue, team_sat_100), nil)
-  expect("still TL_SOLID", svc.state.mode, sl.TL_SOLID)
+  expect("still TL_SOLID", svc.state.mode, TallieLightService.TL_SOLID)
   # bri 40/100 → 102/255
   expect("saved_light bri updated", svc.config.saved_light.bri, 102)
 end
@@ -698,7 +702,7 @@ def test_34_timeout_switches_team()
   deliver(svc, 'bos', 'BOS', 'in', '5', '1', nil, 1700000100)
   # BOS (live) takes over from NYY (final)
   expect("BOS now active", svc.state.active_event.competitor_slug, 'bos')
-  expect("TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
 end
 
 # ── 35: Timeout, no winners remaining → TL_IDLE ──────────
@@ -709,7 +713,7 @@ def test_35_timeout_no_winners()
   # Save snapshot first (light has a state)
   global.light._state = {'rgb': 'aabbcc', 'hue': 100, 'sat': 200, 'bri': 200, 'power': true}
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
-  expect("TL_ANIM", svc.state.mode, sl.TL_ANIM)
+  expect("TL_ANIM", svc.state.mode, TallieLightService.TL_ANIM)
   expect_not_nil("saved_light created", svc.config.saved_light)
   # Advance time beyond the event's timeout window
   harness.set_clock(1700000000 + 60 * 60 + 100)
@@ -717,7 +721,7 @@ def test_35_timeout_no_winners()
   deliver(svc, 'nyy', 'NYY', 'in', '5', '1', nil, 1700000000)
   # Hmm — duplicate event check would skip. Let's fire the timer instead.
   harness.fire_timer("handle_event_timeout")
-  expect("TL_IDLE", svc.state.mode, sl.TL_IDLE)
+  expect("TL_IDLE", svc.state.mode, TallieLightService.TL_IDLE)
   expect_nil("saved_light cleared", svc.config.saved_light)
 end
 
@@ -760,7 +764,7 @@ end
 def test_39_restore_light_power_on()
   current_test = 'T39'
   var svc = make_service(true)
-  svc.config.saved_light = sl.TLSavedLight.from_light({'rgb': '00ff00', 'hue': 120, 'sat': 255, 'bri': 200, 'power': true}, 0)
+  svc.config.saved_light = TLSavedLight.from_light({'rgb': '00ff00', 'hue': 120, 'sat': 255, 'bri': 200, 'power': true}, 0)
   svc.lc.restore_light(svc.config.saved_light)
   svc._teardown_active_event()
   expect_true("Color2 cmd sent", harness.cmd_sent("Color2 00ff00"))
@@ -772,7 +776,7 @@ end
 def test_40_restore_light_power_off_uses_lightset()
   current_test = 'T40'
   var svc = make_service(true)
-  svc.config.saved_light = sl.TLSavedLight.from_light({'rgb': '0000ff', 'hue': 240, 'sat': 255, 'bri': 100, 'power': false}, 0)
+  svc.config.saved_light = TLSavedLight.from_light({'rgb': '0000ff', 'hue': 240, 'sat': 255, 'bri': 100, 'power': false}, 0)
   global.light._state = {'rgb': 'ffffff', 'hue': 0, 'sat': 0, 'bri': 255, 'power': true}
   svc.lc.restore_light(svc.config.saved_light)
   svc._teardown_active_event()
@@ -831,11 +835,12 @@ def test_44_boot_with_saved_light()
   persist.sl_saved_light = {'rgb': 'aabbcc', 'hue': 50, 'sat': 100, 'bri': 200, 'power': true, 'end_time': 1234}
   # Boot
   harness.enqueue_topics_response(['sports-lamp/nyy'], nil, nil)
-  sl.TallieLightService.run_from_conf()
-  expect_not_nil("service started", global._tallielight)
-  expect("mode IDLE", global._tallielight.state.mode, sl.TL_IDLE)
-  expect_not_nil("saved_light loaded", global._tallielight.config.saved_light)
-  expect("saved rgb loaded", global._tallielight.config.saved_light.rgb, 'aabbcc')
+  tl.run_from_conf()
+  var svc44 = tl.get()
+  expect_not_nil("service started", svc44)
+  expect("mode IDLE", svc44.state.mode, TallieLightService.TL_IDLE)
+  expect_not_nil("saved_light loaded", svc44.config.saved_light)
+  expect("saved rgb loaded", svc44.config.saved_light.rgb, 'aabbcc')
 end
 
 # ── Run all ──────────────────────────────────────────────
@@ -894,7 +899,7 @@ def run_all()
   test_43_oauth_reconnect()
   test_44_boot_with_saved_light()
 
-  print(format("test_service: %d passed, %d failed", passed, failed))
+  print(format("test_tallielight: %d passed, %d failed", passed, failed))
   if failed > 0
     print("Failures:")
     for f : failures
