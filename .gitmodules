@@ -1,0 +1,3 @@
+[submodule "tasmota-src"]
+	path = tasmota-src
+	url = https://github.com/arendst/Tasmota.git

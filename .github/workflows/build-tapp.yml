@@ -1,19 +1,14 @@
-name: Build TallieLight TAPP
+name: Build Tasmota Application
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - "build_tapp.sh"
-      - "manifest.json"
-      - "src/**"
-      - ".github/workflows/build-tapp.yml"
+    tags:
+      - "v*"
 
 jobs:
   build-tapp:
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     strategy:
       matrix:
         environment: [dev, prod]
@@ -24,12 +19,29 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Validate tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"   # strip leading 'v', expect A.B.C.D
+          IFS='.' read -ra parts <<< "$tag"
+          if [[ ${#parts[@]} -ne 4 ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must be 4-part (e.g. v1.2.0.0)"
+            exit 1
+          fi
+          tag_hex=$(printf "0x%02X%02X%02X%02X" "${parts[0]}" "${parts[1]}" "${parts[2]}" "${parts[3]}")
+          manifest_hex=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json \
+            | sed 's/.*"\(0x[^"]*\)"/\1/')
+          if [[ "$tag_hex" != "$manifest_hex" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME → $tag_hex does not match manifest.json version $manifest_hex"
+            exit 1
+          fi
+          echo "Version check passed: $GITHUB_REF_NAME → $tag_hex"
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
       - name: Install minify CLI
         run: |
@@ -59,8 +71,130 @@ jobs:
           [ "$src" != "$dst" ] && mv "$src" "$dst" || true
 
       - name: Upload tapp artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.environment == 'prod' && 'TallieLight' || 'TallieLight-dev' }}
           path: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
           if-no-files-found: error
+
+  build-tasmota:
+    needs: build-tapp
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - name: Checkout (with Tasmota submodule)
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Download tapp artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.environment == 'prod' && 'TallieLight' || 'TallieLight-dev' }}
+          path: .extensions-staging/.extensions/
+
+      - name: Rename tapp to canonical filename
+        run: |
+          src=".extensions-staging/.extensions/${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}"
+          dst=".extensions-staging/.extensions/TallieLight.tapp"
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install pioarduino
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "latest"
+          enable-cache: false
+      - run: uv pip install --system pioarduino
+
+      - name: Copy user_config_override.h
+        run: cp tasmota/user_config_override.h tasmota-src/tasmota/user_config_override.h
+
+      - name: Generate platformio_override.ini
+        working-directory: tasmota-src
+        run: |
+          cp platformio_override_sample.ini platformio_override.ini
+          sed -i 's/^                          tasmota$/                          tasmota32/' platformio_override.ini
+          python3 - <<'PYEOF'
+          import os, re
+
+          ws = os.environ["GITHUB_WORKSPACE"]
+          append_file = os.path.join(ws, "tasmota", "platformio_append.ini")
+          override_file = "platformio_override.ini"
+
+          with open(append_file) as f:
+              snippet = f.read().replace("GITHUB_WORKSPACE_PLACEHOLDER", ws)
+
+          # Strip the [env:tasmota32_base] header — we'll insert under the existing one
+          snippet = re.sub(r"^\[env:tasmota32_base\]\n", "", snippet, flags=re.MULTILINE)
+
+          with open(override_file) as f:
+              content = f.read()
+
+          # Insert snippet immediately after the [env:tasmota32_base] line
+          content = content.replace("[env:tasmota32_base]\n", "[env:tasmota32_base]\n" + snippet, 1)
+
+          with open(override_file, "w") as f:
+              f.write(content)
+          PYEOF
+
+      - name: Build Tasmota firmware
+        working-directory: tasmota-src
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: platformio run -e tasmota32
+
+      - name: Rename firmware binary
+        run: |
+          src="tasmota-src/build_output/firmware/tasmota32.bin"
+          dst="${{ matrix.environment == 'prod' && 'tasmota32.bin' || 'tasmota32-dev.bin' }}"
+          [ "$(basename $src)" != "$dst" ] && mv "$src" "tasmota-src/build_output/firmware/$dst" || true
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment == 'prod' && 'TasmotaTallieLight' || 'TasmotaTallieLight-dev' }}
+          path: tasmota-src/build_output/firmware/${{ matrix.environment == 'prod' && 'tasmota32.bin' || 'tasmota32-dev.bin' }}
+          if-no-files-found: error
+
+  release:
+    needs: [build-tapp, build-tasmota]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download prod tapp
+        uses: actions/download-artifact@v8
+        with:
+          name: TallieLight
+          path: dist/
+
+      - name: Download dev tapp
+        uses: actions/download-artifact@v8
+        with:
+          name: TallieLight-dev
+          path: dist/
+
+      - name: Download prod firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: TasmotaTallieLight
+          path: dist/
+
+      - name: Download dev firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: TasmotaTallieLight-dev
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
