@@ -16,7 +16,6 @@ jobs:
       OAUTH_DOMAIN: ${{ secrets.OAUTH_DOMAIN }}
       OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
       BACKEND_URL: ${{ secrets.BACKEND_URL }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -43,9 +42,15 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Cache minify binary
+        uses: actions/cache@v5
+        with:
+          path: ~/go/bin/minify
+          key: minify-v2.24.13-${{ runner.os }}
+
       - name: Install minify CLI
         run: |
-          go install github.com/tdewolff/minify/v2/cmd/minify@latest
+          go install github.com/tdewolff/minify/v2/cmd/minify@v2.24.13
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Validate required secrets
@@ -93,13 +98,20 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.environment == 'prod' && 'TallieLight' || 'TallieLight-dev' }}
-          path: .extensions-staging/.extensions/
+          path: littlefs-staging/.extensions/
 
       - name: Rename tapp to canonical filename
         run: |
-          src=".extensions-staging/.extensions/${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}"
-          dst=".extensions-staging/.extensions/TallieLight.tapp"
+          src="littlefs-staging/.extensions/${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}"
+          dst="littlefs-staging/.extensions/TallieLight.tapp"
           [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('tasmota-src/platformio.ini') }}
+          restore-keys: platformio-${{ runner.os }}-
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -110,8 +122,8 @@ jobs:
         uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
-          enable-cache: false
-      - run: uv pip install --system pioarduino
+          enable-cache: true
+      - run: uv pip install --system pioarduino littlefs-python
 
       - name: Copy user_config_override.h
         run: cp tasmota/user_config_override.h tasmota-src/tasmota/user_config_override.h
