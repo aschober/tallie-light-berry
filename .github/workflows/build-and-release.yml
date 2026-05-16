@@ -1,0 +1,320 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-latest
+    outputs:
+      semver: ${{ steps.resolve.outputs.semver }}
+      semver_no_v: ${{ steps.resolve.outputs.semver_no_v }}
+      is_release: ${{ steps.resolve.outputs.is_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve effective version
+        id: resolve
+        run: |
+          manifest_hex=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json \
+            | sed 's/.*"\(0x[^"]*\)"/\1/')
+          if [[ ! "$manifest_hex" =~ ^0x([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$ ]]; then
+            echo "::error::manifest.json version must be 0xAABBCCDD"
+            exit 1
+          fi
+
+          major=$((16#${BASH_REMATCH[1]}))
+          minor=$((16#${BASH_REMATCH[2]}))
+          patch=$((16#${BASH_REMATCH[3]}))
+          build=$((16#${BASH_REMATCH[4]}))
+          manifest_semver="v${major}.${minor}.${patch}.${build}"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "::error::Tag $tag must be 4-part semantic (e.g. v1.2.0.0)"
+              exit 1
+            fi
+            if [[ "$tag" != "$manifest_semver" ]]; then
+              echo "::error::Tag $tag does not match manifest.json version $manifest_semver"
+              exit 1
+            fi
+            semver="$tag"
+            if [[ "$tag" =~ \.0$ ]]; then
+              is_release=true
+            else
+              is_release=false
+            fi
+          else
+            release_tag="v${major}.${minor}.${patch}.0"
+            if git rev-parse --verify --quiet "refs/tags/${release_tag}" >/dev/null; then
+              snapshot_build=$(git rev-list --count "${release_tag}..HEAD")
+            else
+              snapshot_build=$(git rev-list --count HEAD)
+            fi
+
+            # Main builds are snapshot artifacts; reserve .0 for release tags.
+            if [[ "$snapshot_build" -eq 0 ]]; then
+              snapshot_build=1
+            fi
+            if [[ "$snapshot_build" -gt 255 ]]; then
+              echo "::error::Snapshot build component overflow (${snapshot_build} > 255). Bump major/minor/patch and reset build to 0."
+              exit 1
+            fi
+            semver="v${major}.${minor}.${patch}.${snapshot_build}"
+            is_release=false
+          fi
+
+          echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+          echo "semver_no_v=${semver#v}" >> "$GITHUB_OUTPUT"
+          echo "is_release=${is_release}" >> "$GITHUB_OUTPUT"
+          echo "Effective version: ${semver}"
+
+  build-tapp:
+    needs: compute-version
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    env:
+      OAUTH_DOMAIN: ${{ secrets.OAUTH_DOMAIN }}
+      OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Cache minify binary
+        uses: actions/cache@v5
+        with:
+          path: ~/go/bin/minify
+          key: minify-v2.24.13-${{ runner.os }}
+
+      - name: Install minify CLI
+        run: |
+          go install github.com/tdewolff/minify/v2/cmd/minify@v2.24.13
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for key in OAUTH_DOMAIN OAUTH_CLIENT_ID BACKEND_URL; do
+            if [ -z "${!key}" ]; then
+              echo "::error::$key is not set. Add it as a repository secret."
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Check version fields
+        run: |
+          # Convert vA.B.C.D to 0xAABBCCDD
+          semver="${{ needs.compute-version.outputs.semver }}"
+          semver_no_v="${semver#v}"
+          IFS='.' read -r major minor patch build <<< "$semver_no_v"
+          hex_version=$(printf "0x%02X%02X%02X%02X" "$major" "$minor" "$patch" "$build")
+          if [ "${{ needs.compute-version.outputs.is_release }}" = "false" ]; then
+            echo "Non-release: Patching version fields for CI artifact: $hex_version"
+            sed -i'' -E "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" manifest.json
+            sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/oa_service.be
+            sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/tl_service.be
+          else
+            echo "Release: checking version fields in source files: $hex_version"
+            manifest_version=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json | sed 's/.*"\([^"]*\)"/\1/')
+            oa_version=$(grep -o 'static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*' src/oa_service.be | awk '{print $4}')
+            tl_version=$(grep -o 'static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*' src/tl_service.be | awk '{print $4}')
+            if [[ "$manifest_version" != "$hex_version" || "$oa_version" != "$hex_version" || "$tl_version" != "$hex_version" ]]; then
+              echo "::error::Version fields do not match release tag ($hex_version):"
+              echo "  manifest.json: $manifest_version"
+              echo "  oa_service.be: $oa_version"
+              echo "  tl_service.be: $tl_version"
+              exit 1
+            fi
+            echo "All version fields match release tag."
+          fi
+        shell: bash
+
+      - name: Build tapp
+        run: ./build-tapp.sh ${{ matrix.environment }}
+
+      - name: Rename tapp artifact
+        run: |
+          src="TallieLight-${{ matrix.environment }}.tapp"
+          dst=${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
+
+      - name: Upload tapp artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          path: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          if-no-files-found: error
+
+  build-tasmota:
+    if: ${{ needs.compute-version.outputs.is_release == 'true' }}
+    needs: [compute-version, build-tapp]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - name: Checkout (with Tasmota submodule)
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Download tapp artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
+          path: littlefs-staging/.extensions/
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('tasmota-upstream/platformio.ini') }}
+          restore-keys: platformio-${{ runner.os }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install pioarduino
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "latest"
+          enable-cache: true
+      - run: uv pip install --system pioarduino littlefs-python
+
+      - name: Copy user_config_override.h
+        run: |
+          if [ ! -d tasmota-upstream/tasmota ]; then
+            echo "::error::Expected Tasmota source directory at tasmota-upstream/tasmota"
+            echo "Contents of tasmota-upstream:"
+            ls -la tasmota-upstream || true
+            exit 1
+          fi
+          cp tasmota-config/user_config_override.h tasmota-upstream/tasmota/user_config_override.h
+
+      - name: Generate platformio_override.ini
+        working-directory: tasmota-upstream
+        run: |
+          cp platformio_override_sample.ini platformio_override.ini
+          sed -i 's/^                          tasmota$/                          tasmota32/' platformio_override.ini
+          python3 - <<'PYEOF'
+          import os, re
+
+          ws = os.environ["GITHUB_WORKSPACE"]
+          append_file = os.path.join(ws, "tasmota-config", "platformio_append.ini")
+          override_file = "platformio_override.ini"
+
+          with open(append_file) as f:
+              snippet = f.read().replace("GITHUB_WORKSPACE_PLACEHOLDER", ws)
+
+          # Strip the [env:tasmota32_base] header — we'll insert under the existing one
+          snippet = re.sub(r"^\[env:tasmota32_base\]\n", "", snippet, flags=re.MULTILINE)
+
+          with open(override_file) as f:
+              content = f.read()
+
+          # Insert snippet immediately after the [env:tasmota32_base] line
+          content = content.replace("[env:tasmota32_base]\n", "[env:tasmota32_base]\n" + snippet, 1)
+
+          with open(override_file, "w") as f:
+              f.write(content)
+          PYEOF
+
+      - name: Build Tasmota firmware
+        working-directory: tasmota-upstream
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: platformio run -e tasmota32
+
+      - name: Rename firmware binaries
+        run: |
+          prefix=${{ matrix.environment == 'prod' && '"tl-"' || '"tl-dev-"' }}
+          mv "tasmota-upstream/build_output/firmware/tasmota32.bin" \
+             "tasmota-upstream/build_output/firmware/${prefix}tasmota32.bin"
+          mv "tasmota-upstream/build_output/firmware/tasmota32.factory.bin" \
+             "tasmota-upstream/build_output/firmware/${prefix}tasmota32.factory.bin"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment == 'prod' && 'tl-tasmota32.bin' || 'tl-dev-tasmota32.bin' }}
+          path: tasmota-upstream/build_output/firmware/${{ matrix.environment == 'prod' && 'tl-tasmota32.bin' || 'tl-dev-tasmota32.bin' }}
+          if-no-files-found: error
+
+      - name: Upload factory firmware artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.environment == 'prod' && 'tl-tasmota32.factory.bin' || 'tl-dev-tasmota32.factory.bin' }}
+          path: tasmota-upstream/build_output/firmware/${{ matrix.environment == 'prod' && 'tl-tasmota32.factory.bin' || 'tl-dev-tasmota32.factory.bin' }}
+          if-no-files-found: error
+
+  release:
+    needs: [compute-version, build-tapp, build-tasmota]
+    if: ${{ needs.compute-version.outputs.is_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download prod tapp
+        uses: actions/download-artifact@v8
+        with:
+          name: TallieLight.tapp
+          path: dist/
+
+      - name: Download dev tapp
+        uses: actions/download-artifact@v8
+        with:
+          name: TallieLight-dev.tapp
+          path: dist/
+
+      - name: Download prod firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: tl-tasmota32.bin
+          path: dist/
+
+      - name: Download dev firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: tl-dev-tasmota32.bin
+          path: dist/
+
+      - name: Download prod factory firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: tl-tasmota32.factory.bin
+          path: dist/
+
+      - name: Download dev factory firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: tl-dev-tasmota32.factory.bin
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*

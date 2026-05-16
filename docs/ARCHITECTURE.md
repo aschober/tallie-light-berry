@@ -303,7 +303,7 @@ All three actions POST to `/tl`.
 Run off-device using the Tasmota Berry interpreter:
 
 ```
-bash tests/berry/run_tests.sh
+bash tests/berry/run-tests.sh
 ```
 
 | File | What it covers |
@@ -323,19 +323,19 @@ bash tests/berry/run_tests.sh
 A self-contained HTML file for manually testing the UI in any browser without a device:
 
 ```
-bash tests/web/build_test_page.sh
+bash tests/web/build-test-page.sh
 open tests/web/tallielight_ui_test.html
 ```
 
 Re-fetch Tasmota CSS when the firmware version changes:
 
 ```
-bash tests/web/build_test_page.sh --refresh-style
+bash tests/web/build-test-page.sh --refresh-style
 ```
 
 | File | Purpose |
 |---|---|
-| `tests/web/build_test_page.sh` | Entry point — fetches Tasmota CSS if missing, then builds the test page |
+| `tests/web/build-test-page.sh` | Entry point — fetches Tasmota CSS if missing, then builds the test page |
 | `tests/web/build_test_page.py` | Python assembler and Tasmota CSS parser (called by the shell script) |
 | `tests/web/test_harness.html` | Harness shell template — edit to change mock data or the test panel |
 | `tests/web/tasmota_style.html` | Generated Tasmota CSS (gitignored, auto-fetched from GitHub) |

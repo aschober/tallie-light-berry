@@ -1,11 +1,17 @@
 #!/bin/bash
+
+# Build and package the TallieLight Berry extension.
+#
+# Copies source assets into build/, applies Berry stripping/minification steps,
+# and writes a .tapp artifact for the selected environment.
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MANIFEST_FILE="$SCRIPT_DIR/manifest.json"
 BUILD_DIR="$SCRIPT_DIR/build"
 
-# Cross-platform in-place sed for macOS (BSD sed) and Linux (GNU sed)
+# Cross-platform in-place sed for macOS (BSD sed) and Linux (GNU sed).
 sed_in_place() {
   local file="${@: -1}"
   local args=("${@:1:$#-1}")
@@ -18,7 +24,7 @@ sed_in_place() {
   fi
 }
 
-# Source files to copy into build/ before packaging
+# Source files copied into build/ before packaging.
 SOURCE_FILES=(
   "manifest.json"
   "src/autoexec.be"
@@ -34,7 +40,7 @@ SOURCE_FILES=(
   "src/tallielight_ui.be"
 )
 
-# Berry files to strip comments/blank lines from (paths relative to build/)
+# Berry files stripped of comments and blank lines (paths relative to build/).
 STRIP_FILES=(
   "oauth.be"
   "oa_service.be"
@@ -68,19 +74,15 @@ EXPECTED_BUILD_FILES=(
 
 # Show usage
 show_help() {
-  echo "Usage: $0 [VERSION] [dev|prod]"
+  echo "Usage: $0 [dev|prod]"
   echo "Packages TallieLight as a Tasmota Extension (.tapp)"
   echo ""
   echo "Arguments:"
-  echo "  VERSION    Optional. Semantic version (e.g., 1.2.0) to update manifest."
-  echo "             If not provided, uses existing version from manifest.json"
   echo "  ENV        Optional. Target environment: dev or prod (default: dev)"
   echo ""
   echo "Examples:"
-  echo "  $0              # Build dev using existing version"
-  echo "  $0 1.2.0        # Build dev, update manifest to v1.2.0"
-  echo "  $0 1.2.0 prod   # Build prod, update manifest to v1.2.0"
-  echo "  $0 prod         # Build prod using existing version"
+  echo "  $0              # Build dev using existing version from manifest.json"
+  echo "  $0 prod         # Build prod using existing version from manifest.json"
 }
 
 # Convert semantic version to Tasmota hex format
@@ -101,16 +103,6 @@ version_to_hex() {
 read_version() {
   grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST_FILE" | \
     sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/'
-}
-
-# Update version in manifest.json
-update_version() {
-  local new_version="$1"
-  local hex_version
-  hex_version=$(version_to_hex "$new_version")
-
-  sed_in_place "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" "$MANIFEST_FILE"
-  echo "Updated manifest.json to version $new_version ($hex_version)"
 }
 
 # Copy source files into build/
@@ -150,20 +142,6 @@ generate_env() {
     done
     echo "return tallielight_env"
   } > "$BUILD_DIR/tallielight_env.be"
-}
-
-# Stamp the VERSION static in src/ files so both the tapp and solidified firmware stay in sync
-stamp_version() {
-  local hex_version
-  hex_version=$(read_version)
-  local files=("src/oa_service.be" "src/tl_service.be")
-  for file in "${files[@]}"; do
-    local path="$SCRIPT_DIR/$file"
-    if [[ -f "$path" ]]; then
-      sed_in_place "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = ${hex_version}/" "$path"
-    fi
-  done
-  echo "Stamped VERSION = ${hex_version} into ${files[*]}"
 }
 
 # Minify HTML into build/
@@ -225,15 +203,12 @@ fi
 echo "Tallie Light TAPP Builder"
 echo "========================="
 
-# Parse arguments: optional VERSION and optional ENV (dev|prod)
+# Parse arguments: optional ENV (dev|prod)
 ENV="dev"
-VERSION_ARG=""
 
 for arg in "$@"; do
   if [[ "$arg" == "dev" || "$arg" == "prod" ]]; then
     ENV="$arg"
-  else
-    VERSION_ARG="$arg"
   fi
 done
 
@@ -250,13 +225,7 @@ fi
 OUTPUT_FILE="$SCRIPT_DIR/TallieLight-${ENV}.tapp"
 echo "Environment: $ENV"
 
-# If version argument provided, update manifest
-if [[ -n "$VERSION_ARG" ]]; then
-  update_version "$VERSION_ARG"
-fi
-
 prepare_build_dir
-stamp_version
 minify_html
 generate_env
 strip_berry

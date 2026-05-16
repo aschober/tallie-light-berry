@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build tests/web/tallielight_ui_test.html — a self-contained file:// test page
-# that bundles tallielight_ui.html inside the Tasmota page chrome.
+
+# Build tests/web/tallielight_ui_test.html.
+#
+# Produces a self-contained file:// test page that bundles tallielight_ui.html
+# inside the Tasmota page chrome.
 #
 # tasmota_style.html is fetched automatically from GitHub on first run.
 # Re-run with --refresh-style if the Tasmota firmware version changes.

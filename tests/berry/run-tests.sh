@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+
 # Run all TallieLight Berry tests off-device.
 #
-# Requires the Tasmota berry binary on your $PATH. Override BERRY_BIN to point elsewhere.
+# Requires the Tasmota berry binary on your $PATH. Override BERRY_BIN to point
+# elsewhere if needed.
 set -e
 
 BERRY_BIN="${BERRY_BIN:-berry}"

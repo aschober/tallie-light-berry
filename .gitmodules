@@ -1,3 +1,4 @@
-[submodule "tasmota-src"]
-	path = tasmota-src
+[submodule "tasmota-upstream"]
+	path = tasmota-upstream
 	url = https://github.com/arendst/Tasmota.git
+	branch = development

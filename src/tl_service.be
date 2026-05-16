@@ -20,7 +20,7 @@ var TLRunState          = introspect.get(global, 'TLRunState')
 var TLLightController   = introspect.get(global, 'TLLightController')
 
 class TallieLightService
-  static VERSION = 0x01020000    # stamped by build_tapp.sh
+  static VERSION = 0x01020105    # stamped by bump-version.sh or CI workflow
 
   var config                     # TLConfig
   var state                      # TLRunState
@@ -208,7 +208,7 @@ class TallieLightService
     self._connect_mqtt()
   end
 
-  # Logging helper for debug print statements that is ignored by strip_berry in build_tapp.sh
+  # Logging helper for debug print statements that is ignored by strip_berry in build-tapp.sh
   def _log(msg) print("TAL: " + msg) end
 
   # ── MQTT message handling ─────────────────────────────────

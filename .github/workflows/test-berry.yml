@@ -38,8 +38,8 @@ jobs:
       - name: Build berry interpreter
         if: steps.cache-berry.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 https://github.com/arendst/Tasmota tasmota-src
-          cd tasmota-src/lib/libesp32/berry
+          git clone --depth=1 https://github.com/arendst/Tasmota tasmota-upstream
+          cd tasmota-upstream/lib/libesp32/berry
           make -j"$(nproc)"
           mkdir -p "$GITHUB_WORKSPACE/berry-bin"
           cp berry "$GITHUB_WORKSPACE/berry-bin/berry"
@@ -48,4 +48,4 @@ jobs:
         run: echo "$GITHUB_WORKSPACE/berry-bin" >> "$GITHUB_PATH"
 
       - name: Run Berry tests
-        run: bash tests/berry/run_tests.sh
+        run: bash tests/berry/run-tests.sh

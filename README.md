@@ -1,20 +1,35 @@
 # Tallie Light Berry
 
-Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry app for ESP32 LED controllers. It watches live sports scores from the Tallie cloud and drives an LED strip to celebrate when a tracked team is winning — flashing or animating in the team's color. After the game ends, the light restores to its prior state once the user-selected timeout expires. Manually turning off the light also triggers a restore of light.
+Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry app for ESP32 LED controllers. It watches live sports scores from the Tallie cloud and drives an LED strip to celebrate when a favorite team is winning or has won — animating LEDs in the team's color during the game and solid color when the game ends. After the celebration is over (based on a user-selected timer), the light restores to its prior state. Tallie Light can be configured to automatically turn on when winning or can be configured to be your team's color the next time it is manually turned on.
 
-The device authenticates with the Tallie cloud using OAuth 2.0 Device Authorization Flow. Once authorized, the cloud provisions MQTT credentials and a set of topic subscriptions for each team the user has configured. Game updates arrive over MQTT and are processed entirely on-device.
+The device authenticates with the Tallie Cloud using OAuth 2.0 Device Authorization Flow. Once authorized, the Tallie Cloud provisions MQTT credentials and a set of topic subscriptions for each team the user has configured. Game updates arrive over MQTT and are processed entirely on-device.
 
 ## Hardware
 
-Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip. It was developed against the [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/5987), a compact ESP32-S3 board with a built-in NeoPixel driver. The Tasmota template for this board is:
+### Option 1: Purchase a pre-built Tallie Light (Coming Soon)
 
-```
+A ready-to-use Tallie Light device with firmware pre-installed. No assembly or flashing required.
+
+### Option 2: Build your own
+
+Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip -- commonly known as WLED-compatible or Tasmota-compatible controllers. Tallie Light was developed using an [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/6160), a compact ESP32 board with built-in fuse and 5V level shifter, an [Adafruit I2C Stemma QT Rotary Encoder](https://www.adafruit.com/product/4991), and a Ring of 16x RGBW 5050 LEDs. Any ESP32 running Tasmota with a NeoPixel-compatible LED strip should work with minor GPIO adjustments.
+
+
+1. The [Tasmota Template](https://tasmota.github.io/docs/Templates/) for the Adafruit Sparkle Motion Mini, I2C rotary encoder, and RGBW LEDs is:
+```json
 {"NAME":"Tallie Light","GPIO":[32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,640,0,0,608,0,0,0,0,0,0,0,0,0,1376,0,0,0,0,0,0,0],"FLAG":0,"BASE":1}
 ```
+2. Run the following command after boot to configure LED and rotary encoder settings.
+```bash
+> Backlog0 SetOption43 50; SetOption105 1; PixelType 9
+```
+3. Configure [Tasmota Timezone](https://tasmota.github.io/docs/Commands/#timestd) (see `TimeStd`, `TimeDst` commands) so Tallie Light relies on accurate day and time.
+```bash
+# Below is for America/New_York
+> Backlog0 Timezone 99; TimeStd 0,1,11,1,2,-300; TimeDst 0,2,3,1,2,-240
+```
 
-Any ESP32 running Tasmota with a NeoPixel-compatible LED strip should work with minor GPIO adjustments.
-
-### Custom Tasmota firmware
+#### Custom Tasmota firmware
 
 Tallie Light requires a custom Tasmota build to include the Berry MQTT client. Standard Tasmota releases do not include all necessary features. Add the following to `user_config_override.h` before building:
 
@@ -32,10 +47,26 @@ Tallie Light requires a custom Tasmota build to include the Berry MQTT client. S
 
 ## Installation
 
-1. Flash Tasmota to your ESP32 and configure for your hardware. If using an [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/5987), you can apply the hardware template above.
-2. Build the `.tapp` extension archive (see [Building](#building) below).
-3. In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `TallieLight-prod.tapp` with type set to **Tasmota App**.
-4. The extension loads automatically on reboot. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and configure your teams.
+There are two ways to install Tallie Light, depending on whether you use the custom Tasmota firmware from this repo or a standard Tasmota build.
+
+### Option A: Custom firmware (recommended, ~30 KB heap)
+
+The custom build pre-compiles Tallie Light Berry classes into the firmware, reducing heap usage by roughly 20 KB compared to the `.tapp` approach.
+
+1. Download `tl-tasmota32.factory.bin` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
+2. **First flash:** Use the [Tasmota Web Installer](https://tasmota.github.io/install/) for browser-based flashing via USB — no tools required. Click **Connect**, select your device's serial port, choose **Upload factory bin**, and select `tl-tasmota32.factory.bin`.  
+   **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`.
+3. Connect to the `tasmota-XXXXXX` Wi-Fi hotspot, join your network, then apply the hardware template for your board (see [Hardware](#hardware)).
+4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
+
+### Option B: Standard Tasmota + `.tapp` extension (~50 KB heap)
+
+If you already have Tasmota running, you can install Tallie Light as a Berry app extension without reflashing. This uses more heap because Berry classes are loaded at runtime rather than compiled into the firmware.
+
+1. Ensure your Tasmota build includes `USE_BERRY_MQTTCLIENT`, `USE_MQTT_TLS`, `USE_MQTT_AWS_IOT_LIGHT`, and `USE_BERRY_ANIMATION` (see [Custom Tasmota firmware](#custom-tasmota-firmware)).
+2. Download `TallieLight.tapp` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
+3. In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload**, upload `TallieLight.tapp` with type set to **Tasmota App**, and reboot.
+4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
 
 ## Building
 
@@ -47,7 +78,7 @@ The build script copies source files into a `build/` staging directory, minifies
   ```
   brew install tdewolff/tap/minify
   ```
-- Python 3 — used by the web UI test harness build script (`tests/web/build_test_page.py`) which generates a test HTML file to see changes off device.
+- Python3 — used by the web UI test harness build script (`tests/web/build_test_page.py`) which generates a test HTML file to see changes off device.
 
 ### Environment config
 
@@ -78,13 +109,11 @@ export BACKEND_URL=...
 ### Running a build
 
 ```bash
-./build_tapp.sh               # dev build, existing Berry extension version
-./build_tapp.sh prod          # prod build, existing Berry extension version
-./build_tapp.sh 1.2.0         # dev build, update version to 1.2.0
-./build_tapp.sh 1.2.0 prod    # prod build, update version to 1.2.0
+./build-tapp.sh               # dev build using existing version from manifest.json
+./build-tapp.sh prod          # prod build using existing version from manifest.json
 ```
 
-Output is written to `TallieLight-dev.tapp` or `TallieLight-prod.tapp` in the repo root. The `build/` directory is also left in place for inspection after a build.
+Output is written to `TallieLight-dev.tapp` or `TallieLight-prod.tapp` in the repo root. The `build/` directory is left in place for inspection after a build.
 
 ## Development
 
@@ -93,7 +122,7 @@ Output is written to `TallieLight-dev.tapp` or `TallieLight-prod.tapp` in the re
 Berry unit tests run off-device using the Tasmota Berry interpreter. The `berry` binary must be on your `$PATH`. Override with `BERRY_BIN=/path/to/berry` if needed.
 
 ```bash
-bash tests/berry/run_tests.sh
+bash tests/berry/run-tests.sh
 ```
 
 ### Web UI test harness
@@ -101,7 +130,7 @@ bash tests/berry/run_tests.sh
 A self-contained HTML file for testing the settings page in any browser without a device:
 
 ```bash
-bash tests/web/build_test_page.sh
+bash tests/web/build-test-page.sh
 open tests/web/tallielight_ui_test.html
 ```
 
@@ -110,3 +139,18 @@ Pass `--refresh-style` to re-fetch the Tasmota CSS when the firmware version cha
 ### Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a full description of the state machine, event selection logic, class structure, and test scenarios.
+
+## Releases
+
+Pushing a tag matching `v*` triggers the CI pipeline, which builds and attaches four artifacts to a GitHub Release:
+
+| Artifact | Description |
+|---|---|
+| `TallieLight.tapp` | Production `.tapp` extension archive |
+| `TallieLight-dev.tapp` | Dev `.tapp` extension archive |
+| `tl-tasmota32.bin` | Production custom Tasmota firmware — OTA upgrade |
+| `tl-dev-tasmota32.bin` | Dev custom Tasmota firmware — OTA upgrade |
+| `tl-tasmota32.factory.bin` | Production factory image — first flash via esptool at `0x0` |
+| `tl-dev-tasmota32.factory.bin` | Dev factory image — first flash via esptool at `0x0` |
+
+The tag must be four-part (e.g. `v1.2.0.0`) and match the `version` field in `manifest.json`. Each build variant pulls secrets from its matching GitHub Environment (`dev` or `prod`).

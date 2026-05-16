@@ -1,6 +1,11 @@
-# Bash script to upload a Berry file to Tasmota device
 #!/bin/bash
-# Check if the correct number of arguments is provided
+
+# Upload a Berry source file or packaged .tapp to a Tasmota device.
+#
+# .tapp files are uploaded into /.extensions/ so Tasmota loads them as
+# extensions. .be files are uploaded to the device root.
+
+# Validate arguments.
 echo "Berry file upload to Tasmota device"
 echo "========================================"
 if [ "$#" -ne 1 ]; then
@@ -9,15 +14,13 @@ if [ "$#" -ne 1 ]; then
 fi
 
 BERRY_FILE_PATH="$1"
-# TASMOTA_IP="192.168.1.250"
-TASMOTA_IP="10.193.168.131"
+TASMOTA_IP="192.168.1.188"
 FILENAME=$(basename "$BERRY_FILE_PATH")
 
-# .tapp files go into /.extensions/ so Tasmota loads them as Extensions.
-# .be files upload to root /.
+# .tapp files go into /.extensions/ so Tasmota loads them as extensions.
+# .be files upload to the device root.
 if [[ "$BERRY_FILE_PATH" == *.tapp ]]; then
-    # Check if the disabled variant (trailing _) exists on the device —
-    # if so, preserve that suffix so autorun state is unchanged.
+    # Preserve a disabled trailing _ suffix so autorun state is unchanged.
     LISTING=$(curl -s "http://${TASMOTA_IP}/ufsd?download=/.extensions")
     if echo "$LISTING" | grep -q "${FILENAME}_"; then
         DEST_PATH="/.extensions/${FILENAME}_"
