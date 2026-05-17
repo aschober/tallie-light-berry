@@ -93,7 +93,10 @@ Examples :
 #undef  OTA_URL
 #define OTA_URL                "https://ota.tallielight.com/tl-tasmota32.bin"
 #undef  USER_TEMPLATE
-#define USER_TEMPLATE          "{\"NAME\":\"Tallie Light\",\"GPIO\":[32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,640,0,0,608,0,0,0,0,0,0,0,0,0,1376,0,0,0,0,0,0,0],\"FLAG\":0,\"BASE\":1,\"CMND\":\"WebButton1 \xf0\x9f\x92\xa1|SetOption43 50|SetOption105 1|PixelType 9\"}"
+// Tallie Light Template (Adafruit Sparkle Motion Mini): Button (GPIO 0), I2C SDA (GPIO 19), I2C SCL (GPIO22), WS2812 (GPIO 32)
+// Template CMND: WebButton1 💡 (rename button) | SetOption43 50 (rotary encoder steps) | SetOption52 1 (enable logs with timezone offset) | 
+//                WhiteBlend 1 (enable white blend mode) | Pixels 16 (number of pixels in strip) | PixelType 9 (set led channels and color order, GRBW = 9)
+#define USER_TEMPLATE          "{\"NAME\":\"Tallie Light\",\"GPIO\":[32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,640,0,0,608,0,0,0,0,0,0,0,0,0,1376,0,0,0,0,0,0,0],\"FLAG\":0,\"BASE\":1,\"CMND\":\"WebButton1 \xf0\x9f\x92\xa1|SetOption43 50|SetOption52 1|WhiteBlend 1|Pixels 16|PixelType 9\"}"
 #undef  MODULE
 #define MODULE                 USER_MODULE
 

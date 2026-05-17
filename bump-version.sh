@@ -37,6 +37,7 @@ Options:
   --minor              Bump minor version (e.g., 0x01020100 -> 0x01030000)
   --patch              Bump patch version (e.g., 0x01020100 -> 0x01020200)
   --dry-run            Show what would happen without making changes
+  --no-commit          Update files only; skip the git commit and tag
   -h, --help           Show this help
 
 Arguments:
@@ -216,6 +217,7 @@ main() {
   local new_version=""
   local bump_type=""
   local dry_run=false
+  local no_commit=false
 
   # Parse arguments
   while [[ $# -gt 0 ]]; do
@@ -234,6 +236,10 @@ main() {
         ;;
       --dry-run)
         dry_run=true
+        shift
+        ;;
+      --no-commit)
+        no_commit=true
         shift
         ;;
       -h|--help)
@@ -296,6 +302,7 @@ main() {
     echo "  - Tag: $semver"
     echo ""
     echo "To apply these changes, run without --dry-run"
+    echo "To update files only (no commit/tag), add --no-commit"
     return 0
   fi
 
@@ -318,6 +325,13 @@ main() {
   if ! git diff --quiet; then
     echo -e "${GREEN}Files changed:${NC}"
     git --no-pager diff --name-only
+  fi
+
+  if [ "$no_commit" = true ]; then
+    echo -e "${GREEN}✓ Version bumped successfully (no commit)${NC}"
+    echo "  Hex:    $new_version"
+    echo "  Semver: $semver"
+    return 0
   fi
 
   # Commit
