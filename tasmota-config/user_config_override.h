@@ -90,7 +90,12 @@ Examples :
 #define FRIENDLY_NAME          "Lampy"
 #undef WIFI_DEFAULT_HOSTNAME
 #define WIFI_DEFAULT_HOSTNAME  "tallie-%06X"         // [Hostname] Expands to tallie-<last 6 hex chars of MAC address>
+#undef  OTA_URL
+#define OTA_URL                "https://ota.tallielight.com/tl-tasmota32.bin"
 
+#ifndef USE_WEBCLIENT_HTTPS
+#define USE_WEBCLIENT_HTTPS
+#endif
 #ifndef USE_MQTT_TLS
 #define USE_MQTT_TLS
 #endif
@@ -116,11 +121,6 @@ Examples :
 #ifndef USE_BERRY_MQTTCLIENT
 #define USE_BERRY_MQTTCLIENT
 #endif
-#ifndef USE_WEBCLIENT_HTTPS
-#define USE_WEBCLIENT_HTTPS
-#endif
-#undef  OTA_URL
-#define OTA_URL                "https://ota.tallielight.com/tl-tasmota32.bin"
 
 #ifdef USE_HOME_ASSISTANT
 #undef USE_HOME_ASSISTANT

@@ -1,0 +1,60 @@
+name: Build App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-latest
+    outputs:
+      semver: ${{ steps.resolve.outputs.semver }}
+      hex_version: ${{ steps.resolve.outputs.hex_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve snapshot version
+        id: resolve
+        run: |
+          manifest_hex=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json \
+            | sed 's/.*"\(0x[^"]*\)"/\1/')
+          if [[ ! "$manifest_hex" =~ ^0x([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$ ]]; then
+            echo "::error::manifest.json version must be 0xAABBCCDD"
+            exit 1
+          fi
+
+          major=$((16#${BASH_REMATCH[1]}))
+          minor=$((16#${BASH_REMATCH[2]}))
+          patch=$((16#${BASH_REMATCH[3]}))
+
+          # Snapshot build = commits since last vA.B.C.0 tag (or total commits)
+          release_tag="v${major}.${minor}.${patch}.0"
+          if git rev-parse --verify --quiet "refs/tags/${release_tag}" >/dev/null; then
+            snapshot_build=$(git rev-list --count "${release_tag}..HEAD")
+          else
+            snapshot_build=$(git rev-list --count HEAD)
+          fi
+          # Reserve .0 for release tags
+          if [[ "$snapshot_build" -eq 0 ]]; then snapshot_build=1; fi
+          if [[ "$snapshot_build" -gt 255 ]]; then
+            echo "::error::Snapshot build overflow (${snapshot_build} > 255). Bump major/minor/patch."
+            exit 1
+          fi
+
+          hex_version=$(printf "0x%02X%02X%02X%02X" "$major" "$minor" "$patch" "$snapshot_build")
+          semver="v${major}.${minor}.${patch}.${snapshot_build}"
+
+          echo "semver=${semver}"       >> "$GITHUB_OUTPUT"
+          echo "hex_version=${hex_version}" >> "$GITHUB_OUTPUT"
+          echo "Snapshot version: ${semver} (${hex_version})"
+
+  build-tapp:
+    needs: compute-version
+    uses: ./.github/workflows/build-tapp-reusable.yml
+    with:
+      hex_version: ${{ needs.compute-version.outputs.hex_version }}
+    secrets: inherit

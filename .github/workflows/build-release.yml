@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build Release
 
 permissions:
   contents: read
@@ -76,57 +76,10 @@ jobs:
 
   build-tapp:
     needs: compute-version
-    runs-on: ubuntu-latest
-    environment: ${{ matrix.environment }}
-    strategy:
-      matrix:
-        environment: [dev, prod]
-    env:
-      OAUTH_DOMAIN: ${{ secrets.OAUTH_DOMAIN }}
-      OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install minify CLI
-        run: |
-          curl -fsSL https://github.com/tdewolff/minify/releases/download/v2.24.13/minify_linux_amd64.tar.gz \
-            | tar -xz -C /usr/local/bin minify
-
-      - name: Validate required secrets
-        run: |
-          missing=0
-          for key in OAUTH_DOMAIN OAUTH_CLIENT_ID BACKEND_URL; do
-            if [ -z "${!key}" ]; then
-              echo "::error::$key is not set. Add it as a repository secret."
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 1 ]; then exit 1; fi
-
-      - name: Patch version fields
-        run: |
-          hex_version="${{ needs.compute-version.outputs.hex_version }}"
-          sed -i'' -E "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" manifest.json
-          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/oa_service.be
-          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/tl_service.be
-
-      - name: Build tapp
-        run: ./build-tapp.sh ${{ matrix.environment }}
-
-      - name: Rename tapp artifact
-        run: |
-          src="TallieLight-${{ matrix.environment }}.tapp"
-          dst=${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
-          [ "$src" != "$dst" ] && mv "$src" "$dst" || true
-
-      - name: Upload tapp artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
-          path: ${{ matrix.environment == 'prod' && 'TallieLight.tapp' || 'TallieLight-dev.tapp' }}
-          if-no-files-found: error
+    uses: ./.github/workflows/build-tapp-reusable.yml
+    with:
+      hex_version: ${{ needs.compute-version.outputs.hex_version }}
+    secrets: inherit
 
   build-tasmota:
     needs: [compute-version, build-tapp]
@@ -139,6 +92,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: true
+
+      - name: Patch version fields
+        run: |
+          hex_version="${{ needs.compute-version.outputs.hex_version }}"
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/oa_service.be
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/tl_service.be
 
       - name: Download tapp artifact
         uses: actions/download-artifact@v8
@@ -279,13 +238,13 @@ jobs:
           # Prod extension index + tapp
           mkdir -p extensions/tapp
           cp "$GITHUB_WORKSPACE/dist/TallieLight.tapp/TallieLight.tapp" extensions/tapp/TallieLight.tapp
-          printf '{"name":"TallieLight","file":"TallieLight.tapp","version":"%s","description":"Sports score-based light control.","author":"Allen Schober"}\n' \
+          printf '{"name":"Tallie Light","file":"TallieLight.tapp","version":"%s","description":"Sports score-based light control.","author":"Allen Schober"}\n' \
             "$hex_version" > extensions/extensions.jsonl
 
           # Dev extension index + tapp
           mkdir -p extensions/dev/tapp
           cp "$GITHUB_WORKSPACE/dist/TallieLight-dev.tapp/TallieLight-dev.tapp" extensions/dev/tapp/TallieLight-dev.tapp
-          printf '{"name":"TallieLight Dev","file":"TallieLight-dev.tapp","version":"%s","description":"Sports score-based light control (dev build).","author":"Allen Schober"}\n' \
+          printf '{"name":"Tallie Light (Dev)","file":"TallieLight-dev.tapp","version":"%s","description":"Sports score-based light control.","author":"Allen Schober"}\n' \
             "$hex_version" > extensions/dev/extensions.jsonl
 
           # Future flashing page (copy install/ from main if present)

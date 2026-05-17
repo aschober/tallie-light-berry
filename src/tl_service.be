@@ -20,7 +20,7 @@ var TLRunState          = introspect.get(global, 'TLRunState')
 var TLLightController   = introspect.get(global, 'TLLightController')
 
 class TallieLightService
-  static VERSION = 0x01020400    # stamped by bump-version.sh or CI workflow
+  static VERSION = 0x01020500    # stamped by bump-version.sh or CI workflow
 
   var config                     # TLConfig
   var state                      # TLRunState
