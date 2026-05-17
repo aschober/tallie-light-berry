@@ -14,7 +14,6 @@
 class OAuthService
   static VERSION = 0x01020700  # stamped by bump-version.sh or CI workflow
   
-  var device_id              # cached device id — never changes after first boot
   var _cached_uid            # cached user id — used on every MQTT (re)connect
   var _cached_token_expiry   # cached token expiry — used on every is_authorized cron tick
   var _device_flow_state     # transient device-flow state (oa_uc/oa_vuc/oa_dc/oa_dce/oa_pi/oa_err) — in-memory only
@@ -46,17 +45,6 @@ class OAuthService
     import math
     math.srand(tasmota.millis())
 
-    # First-boot device id is generated once and pinned.
-    var did = persist.find("oa_did", nil)
-    if did == nil
-      import uuid
-      did = uuid.uuid4()
-      persist.oa_did = did
-      persist.save()
-      self._log(format("init - generated new device_id %s", did))
-    end
-    self.device_id = did
-
     # Prime the in-memory oauth cache from persist
     self._cached_uid            = persist.find("oa_uid", nil)
     self._cached_token_expiry   = persist.find("oa_ate", nil)
@@ -74,8 +62,7 @@ class OAuthService
     tasmota.remove_cron("oauth_refresh")
     tasmota.add_cron(format("0 %s * * * *", minutes.concat(",")),
                      /-> self._cron_refresh_check(), "oauth_refresh")
-    self._log(format("init - device_id=%s, refresh cron at minutes %s",
-                     did, minutes.concat(",")))
+    self._log(format("init - refresh cron mins: %s", minutes.concat(",")))
   end
 
   def unload()
@@ -500,8 +487,7 @@ class OAuthService
     return nil
   end
 
-  def get_mqtt_username()  return self._cached_uid end
-  def get_mqtt_client_id() return self.device_id end
+  def get_user_id() return self._cached_uid end
 
 end
 

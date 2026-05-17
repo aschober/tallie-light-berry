@@ -226,7 +226,7 @@ src/tallielight.be
 src/oa_service.be
 ├── OAuthService (#@ solidify:OAuthService,weak — compiled into firmware when solidified)
 ├── Storage layer (_get / _set_many / read_all_oauth_data)
-│   ├── Persist keys: oa_at, oa_ate, oa_uid, oa_email, oa_rt, oa_did
+│   ├── Persist keys: oa_at, oa_ate, oa_uid, oa_email, oa_rt
 │   └── In-memory device-flow state: oa_uc, oa_vuc, oa_dc, oa_dce, oa_pi, oa_err
 ├── HTTP layer (_webclient_post)
 ├── JWT layer (_parse_jwt_payload)

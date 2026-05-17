@@ -17,18 +17,18 @@ tallielight_module.init = def (m)
   def _log(msg) print("TAL: " + msg) end
 
   var use_tapp = false
-  if introspect.get(global, 'TallieLightService') == nil
-    _log("no solidified classes, loading from .tapp")
-    use_tapp = true
-  else
+  var solidified = introspect.get(global, 'TallieLightService')
+  if solidified != nil
     var tapp_ver = 0
     try
       var tallielight_env = introspect.module('tallielight_env', true)
       tapp_ver = tallielight_env.VERSION
     except .. as e, v
     end
-    if tapp_ver != 0
-      var solid_ver = introspect.get(introspect.get(global, 'TallieLightService'), 'VERSION')
+    if tapp_ver == 0
+      _log("tapp VERSION unavailable, using solidified")
+    else
+      var solid_ver = introspect.get(solidified, 'VERSION')
       if solid_ver == nil solid_ver = 0 end
       # major.minor.patch: bytes A.B.C of 0xAABBCCDD
       var tapp_major = tapp_ver >> 24
@@ -37,14 +37,18 @@ tallielight_module.init = def (m)
       var sol_major  = solid_ver >> 24
       var sol_minor  = (solid_ver >> 16) & 0xFF
       var sol_patch  = (solid_ver & 0xFFFF) >> 8
-      _log(string.format("tapp: v%d.%d.%d, solidified: v%d.%d.%d",
-        tapp_major, tapp_minor, tapp_patch, sol_major, sol_minor, sol_patch))
-      if tapp_major > sol_major || (tapp_major == sol_major && tapp_minor > sol_minor)
+      if tapp_major > sol_major ||
+         (tapp_major == sol_major && tapp_minor > sol_minor) ||
+         (tapp_major == sol_major && tapp_minor == sol_minor && tapp_patch > sol_patch)
         use_tapp = true
       end
-    else
-      _log("tapp VERSION unavailable, using solidified")
+      _log(string.format("tapp: v%d.%d.%d, solidified: v%d.%d.%d - %s",
+        tapp_major, tapp_minor, tapp_patch, sol_major, sol_minor, sol_patch,
+        use_tapp ? "loading from .tapp" : "using solidified"))
     end
+  else
+    _log("no solidified classes, loading from .tapp")
+    use_tapp = true
   end
 
   if use_tapp
@@ -55,9 +59,6 @@ tallielight_module.init = def (m)
     introspect.module('tl_run_state', true)
     introspect.module('tl_light_controller', true)
     introspect.module('tl_service', true)
-    _log("loaded from .tapp")
-  else
-    _log("using solidified")
   end
 
   var TallieLightService = introspect.get(global, 'TallieLightService')

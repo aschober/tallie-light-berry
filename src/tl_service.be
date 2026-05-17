@@ -22,6 +22,7 @@ var TLLightController   = introspect.get(global, 'TLLightController')
 class TallieLightService
   static VERSION = 0x01020700    # stamped by bump-version.sh or CI workflow
 
+  var device_id                  # device id - UUID derived from MAC addr, stable across resets
   var config                     # TLConfig
   var state                      # TLRunState
   var last_events                # map: slug -> TLScoreboardEvent
@@ -36,6 +37,7 @@ class TallieLightService
 
   # ── Lifecycle ─────────────────────────────────────────────
   def init(config)
+    self.device_id = self._derive_device_id()
     self.config = config
     self.state = TLRunState()
     self.last_events = {}
@@ -48,11 +50,28 @@ class TallieLightService
     self._mqtt_authorizer_name = nil
     self._register_device_backoff = 10000
 
-    self._log('init - add rule for OAuth Updated.')
+    self._log(format('init - device_id=%s, adding oauth_updated rule', self.device_id))
     tasmota.add_rule('OAuth=UPDATED', /->
       tasmota.set_timer(0, /-> self._oauth_updated(), 'oauth_updated')
     )
     self._start()
+  end
+
+  def _derive_device_id()
+    # UUIDv8 deterministic UUID derived from WiFi MAC via SHA-256
+    # Tallie Light namespace (random): 61069543-17a7-40c1-9433-b3085e97c0e6
+    import crypto
+    import string
+    var ns = bytes('6106954317a740c19433b3085e97c0e6')
+    var mac = string.replace(tasmota.wifi('mac'), ':', '')
+    var name = bytes().fromstring(mac)
+    var h = crypto.SHA256()
+    h.update(ns)
+    h.update(name)
+    var d = h.out()
+    d[6] = (d[6] & 0x0F) | 0x80   # version 8
+    d[8] = (d[8] & 0x3F) | 0x80   # variant 10xx
+    return string.tolower(d[0..3].tohex() + '-' + d[4..5].tohex() + '-' + d[6..7].tohex() + '-' + d[8..9].tohex() + '-' + d[10..15].tohex())
   end
 
   # ── Device registration ───────────────────────────────────
@@ -78,14 +97,13 @@ class TallieLightService
   def _register_device()
     import json
     var tallielight_env = global._tallielight_env
-    var oauth = global._oauth
-    var token = oauth._get_valid_access_token()
+    var token = global._oauth._get_valid_access_token()
     if token == nil  return {"success": false, "message": "No valid access token"}  end
 
     var team_slugs = []
     for tc : self.config.team_configs  team_slugs.push(tc['teamSlug'])  end
 
-    var url = tallielight_env.BACKEND_URL + "/devices/" + oauth.device_id + "/register"
+    var url = tallielight_env.BACKEND_URL + "/devices/" + self.device_id + "/register"
     var body = json.dump({"slugs": team_slugs})
     var headers = [["Content-Type", "application/json"],
                    ["Authorization", "Bearer " + token]]
@@ -101,15 +119,15 @@ class TallieLightService
         self._mqtt_host = parsed["mqtt_host"]
         self._mqtt_port = int(parsed["mqtt_port"])
         self._mqtt_authorizer_name = parsed["mqtt_authorizer_name"]
-        print(format("TAL: _register_device: success, host=%s port=%d topics=%s",
-                     self._mqtt_host, self._mqtt_port, str(self._allowed_topics)))
+        self._log(format("_register_device: success, host=%s port=%d topics=%d",
+                     self._mqtt_host, self._mqtt_port, self._allowed_topics.size()))
         return {"success": true, "password": parsed["password"]}
       end
     end
 
     var msg = format("HTTP %s", str(http_code))
     if http_code == -1  msg = "HTTP request failed"  end
-    print(format("TAL: _register_device: failed — %s", msg))
+    self._log(format("_register_device: failed — %s", msg))
     return {"success": false, "message": msg}
   end
 
@@ -119,9 +137,8 @@ class TallieLightService
     var result = self._register_device()
     if result["success"]
       self._register_device_backoff = 10000
-      var oauth = global._oauth
-      var client_id = oauth.get_mqtt_client_id()
-      var mqtt_user = oauth.get_mqtt_username() + '?x-amz-customauthorizer-name=' + self._mqtt_authorizer_name
+      var client_id = self.device_id
+      var mqtt_user = global._oauth.get_user_id() + '?x-amz-customauthorizer-name=' + self._mqtt_authorizer_name
       var mqtt_password = result["password"]
       self._log(format("_connect_mqtt: MQTT creds client_id=%s, pw len=%s", client_id, size(mqtt_password)))
       self._log(format('_connect_mqtt: Connecting to MQTT broker %s:%d…', self._mqtt_host, self._mqtt_port))
@@ -144,13 +161,12 @@ class TallieLightService
 
   def _start()
     self._log('Starting TallieLightService…')
-    var oauth = global._oauth
 
     var team_slugs = []
     for tc : self.config.team_configs  team_slugs.push(tc['teamSlug'])  end
     self._log(format('Configured for teams: %s', team_slugs))
 
-    if !oauth.is_authorized(true)
+    if !global._oauth.is_authorized(true)
       self._log('MQTT connect deferred as device is not authorized.')
       return
     end
@@ -158,7 +174,7 @@ class TallieLightService
     self.mqtt = global.mqttclient()
     self.mqtt.set_on_message(/ topic, idx, payload_s, payload_b -> self._process_event(topic, idx, payload_s))
     self.mqtt.set_on_connect(def ()
-      self._log(format('MQTT connected. Subscribing to allowed topics: %s', str(self._allowed_topics)))
+      self._log(format('MQTT connected. Subscribing to topics: %s', str(self._allowed_topics)))
       for topic : self._allowed_topics
         self.mqtt.subscribe(topic)
       end
@@ -199,8 +215,7 @@ class TallieLightService
       self._start()
       return
     end
-    var oauth = global._oauth
-    if !oauth.is_authorized(false)
+    if !global._oauth.is_authorized(false)
       self._log('OAuth updated but device not authorized. Skipping reconnect.')
       return
     end
