@@ -1,26 +1,33 @@
 name: Build and Release
 
+permissions:
+  contents: read
+
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version component to bump (ignored if version is set)"
+        required: false
+        type: choice
+        default: patch
+        options: [major, minor, patch]
+      version:
+        description: "Explicit version override (e.g. 1.3.0) — takes precedence over bump"
+        required: false
+        type: string
 
 jobs:
   compute-version:
     runs-on: ubuntu-latest
     outputs:
       semver: ${{ steps.resolve.outputs.semver }}
-      semver_no_v: ${{ steps.resolve.outputs.semver_no_v }}
-      is_release: ${{ steps.resolve.outputs.is_release }}
+      hex_version: ${{ steps.resolve.outputs.hex_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
-      - name: Resolve effective version
+      - name: Compute bumped version
         id: resolve
         run: |
           manifest_hex=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json \
@@ -33,49 +40,39 @@ jobs:
           major=$((16#${BASH_REMATCH[1]}))
           minor=$((16#${BASH_REMATCH[2]}))
           patch=$((16#${BASH_REMATCH[3]}))
-          build=$((16#${BASH_REMATCH[4]}))
-          manifest_semver="v${major}.${minor}.${patch}.${build}"
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            tag="$GITHUB_REF_NAME"
-            if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-              echo "::error::Tag $tag must be 4-part semantic (e.g. v1.2.0.0)"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            ver="${{ inputs.version }}"
+            # Strip leading v if present
+            ver="${ver#v}"
+            if [[ ! "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "::error::version input must be A.B.C (e.g. 1.3.0)"
               exit 1
             fi
-            if [[ "$tag" != "$manifest_semver" ]]; then
-              echo "::error::Tag $tag does not match manifest.json version $manifest_semver"
-              exit 1
-            fi
-            semver="$tag"
-            if [[ "$tag" =~ \.0$ ]]; then
-              is_release=true
-            else
-              is_release=false
-            fi
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
           else
-            release_tag="v${major}.${minor}.${patch}.0"
-            if git rev-parse --verify --quiet "refs/tags/${release_tag}" >/dev/null; then
-              snapshot_build=$(git rev-list --count "${release_tag}..HEAD")
-            else
-              snapshot_build=$(git rev-list --count HEAD)
-            fi
-
-            # Main builds are snapshot artifacts; reserve .0 for release tags.
-            if [[ "$snapshot_build" -eq 0 ]]; then
-              snapshot_build=1
-            fi
-            if [[ "$snapshot_build" -gt 255 ]]; then
-              echo "::error::Snapshot build component overflow (${snapshot_build} > 255). Bump major/minor/patch and reset build to 0."
-              exit 1
-            fi
-            semver="v${major}.${minor}.${patch}.${snapshot_build}"
-            is_release=false
+            case "${{ inputs.bump }}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
           fi
 
-          echo "semver=${semver}" >> "$GITHUB_OUTPUT"
-          echo "semver_no_v=${semver#v}" >> "$GITHUB_OUTPUT"
-          echo "is_release=${is_release}" >> "$GITHUB_OUTPUT"
-          echo "Effective version: ${semver}"
+          for v in $major $minor $patch; do
+            if [[ $v -gt 255 ]]; then
+              echo "::error::Version component overflow (max 255 per component)"
+              exit 1
+            fi
+          done
+
+          hex_version=$(printf "0x%02X%02X%02X%02X" "$major" "$minor" "$patch" "0")
+          semver="v${major}.${minor}.${patch}.0"
+
+          echo "semver=${semver}"           >> "$GITHUB_OUTPUT"
+          echo "hex_version=${hex_version}" >> "$GITHUB_OUTPUT"
+          echo "New version: ${semver} (${hex_version})"
 
   build-tapp:
     needs: compute-version
@@ -92,22 +89,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-          cache: false
-
-      - name: Cache minify binary
-        uses: actions/cache@v5
-        with:
-          path: ~/go/bin/minify
-          key: minify-v2.24.13-${{ runner.os }}
-
       - name: Install minify CLI
         run: |
-          go install github.com/tdewolff/minify/v2/cmd/minify@v2.24.13
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://github.com/tdewolff/minify/releases/download/v2.24.13/minify_linux_amd64.tar.gz \
+            | tar -xz -C /usr/local/bin minify
 
       - name: Validate required secrets
         run: |
@@ -118,37 +103,14 @@ jobs:
               missing=1
             fi
           done
-          if [ "$missing" -eq 1 ]; then
-            exit 1
-          fi
+          if [ "$missing" -eq 1 ]; then exit 1; fi
 
-      - name: Check version fields
+      - name: Patch version fields
         run: |
-          # Convert vA.B.C.D to 0xAABBCCDD
-          semver="${{ needs.compute-version.outputs.semver }}"
-          semver_no_v="${semver#v}"
-          IFS='.' read -r major minor patch build <<< "$semver_no_v"
-          hex_version=$(printf "0x%02X%02X%02X%02X" "$major" "$minor" "$patch" "$build")
-          if [ "${{ needs.compute-version.outputs.is_release }}" = "false" ]; then
-            echo "Non-release: Patching version fields for CI artifact: $hex_version"
-            sed -i'' -E "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" manifest.json
-            sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/oa_service.be
-            sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/tl_service.be
-          else
-            echo "Release: checking version fields in source files: $hex_version"
-            manifest_version=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' manifest.json | sed 's/.*"\([^"]*\)"/\1/')
-            oa_version=$(grep -o 'static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*' src/oa_service.be | awk '{print $4}')
-            tl_version=$(grep -o 'static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*' src/tl_service.be | awk '{print $4}')
-            if [[ "$manifest_version" != "$hex_version" || "$oa_version" != "$hex_version" || "$tl_version" != "$hex_version" ]]; then
-              echo "::error::Version fields do not match release tag ($hex_version):"
-              echo "  manifest.json: $manifest_version"
-              echo "  oa_service.be: $oa_version"
-              echo "  tl_service.be: $tl_version"
-              exit 1
-            fi
-            echo "All version fields match release tag."
-          fi
-        shell: bash
+          hex_version="${{ needs.compute-version.outputs.hex_version }}"
+          sed -i'' -E "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$hex_version\"/" manifest.json
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/oa_service.be
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = $hex_version/" src/tl_service.be
 
       - name: Build tapp
         run: ./build-tapp.sh ${{ matrix.environment }}
@@ -167,7 +129,6 @@ jobs:
           if-no-files-found: error
 
   build-tasmota:
-    if: ${{ needs.compute-version.outputs.is_release == 'true' }}
     needs: [compute-version, build-tapp]
     runs-on: ubuntu-latest
     strategy:
@@ -208,8 +169,6 @@ jobs:
         run: |
           if [ ! -d tasmota-upstream/tasmota ]; then
             echo "::error::Expected Tasmota source directory at tasmota-upstream/tasmota"
-            echo "Contents of tasmota-upstream:"
-            ls -la tasmota-upstream || true
             exit 1
           fi
           cp tasmota-config/user_config_override.h tasmota-upstream/tasmota/user_config_override.h
@@ -229,13 +188,11 @@ jobs:
           with open(append_file) as f:
               snippet = f.read().replace("GITHUB_WORKSPACE_PLACEHOLDER", ws)
 
-          # Strip the [env:tasmota32_base] header — we'll insert under the existing one
           snippet = re.sub(r"^\[env:tasmota32_base\]\n", "", snippet, flags=re.MULTILINE)
 
           with open(override_file) as f:
               content = f.read()
 
-          # Insert snippet immediately after the [env:tasmota32_base] line
           content = content.replace("[env:tasmota32_base]\n", "[env:tasmota32_base]\n" + snippet, 1)
 
           with open(override_file, "w") as f:
@@ -273,48 +230,101 @@ jobs:
 
   release:
     needs: [compute-version, build-tapp, build-tasmota]
-    if: ${{ needs.compute-version.outputs.is_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download prod tapp
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
-          name: TallieLight.tapp
           path: dist/
 
-      - name: Download dev tapp
-        uses: actions/download-artifact@v8
-        with:
-          name: TallieLight-dev.tapp
-          path: dist/
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Download prod firmware
-        uses: actions/download-artifact@v8
-        with:
-          name: tl-tasmota32.bin
-          path: dist/
+      # ── gh-pages deployment ──────────────────────────────────────────────
 
-      - name: Download dev firmware
-        uses: actions/download-artifact@v8
-        with:
-          name: tl-dev-tasmota32.bin
-          path: dist/
+      - name: Checkout gh-pages branch
+        run: |
+          if git ls-remote --exit-code origin gh-pages; then
+            git fetch origin gh-pages
+            git worktree add gh-pages-dir gh-pages
+          else
+            git worktree add --orphan -b gh-pages gh-pages-dir
+          fi
 
-      - name: Download prod factory firmware
-        uses: actions/download-artifact@v8
-        with:
-          name: tl-tasmota32.factory.bin
-          path: dist/
+      - name: Populate gh-pages
+        run: |
+          semver="${{ needs.compute-version.outputs.semver }}"
+          hex_version="${{ needs.compute-version.outputs.hex_version }}"
+          cd gh-pages-dir
 
-      - name: Download dev factory firmware
-        uses: actions/download-artifact@v8
-        with:
-          name: tl-dev-tasmota32.factory.bin
-          path: dist/
+          # Wipe everything except CNAME and .git internals
+          find . -mindepth 1 -not -name 'CNAME' -not -path './.git*' -delete
+
+          echo "ota.tallielight.com" > CNAME
+
+          # Firmware OTA binaries at root
+          cp "$GITHUB_WORKSPACE/dist/tl-tasmota32.bin/tl-tasmota32.bin"         ./tl-tasmota32.bin
+          cp "$GITHUB_WORKSPACE/dist/tl-dev-tasmota32.bin/tl-dev-tasmota32.bin" ./tl-dev-tasmota32.bin
+
+          # Prod extension index + tapp
+          mkdir -p extensions/tapp
+          cp "$GITHUB_WORKSPACE/dist/TallieLight.tapp/TallieLight.tapp" extensions/tapp/TallieLight.tapp
+          printf '{"name":"TallieLight","file":"TallieLight.tapp","version":"%s","description":"Sports score-based light control.","author":"Allen Schober"}\n' \
+            "$hex_version" > extensions/extensions.jsonl
+
+          # Dev extension index + tapp
+          mkdir -p extensions/dev/tapp
+          cp "$GITHUB_WORKSPACE/dist/TallieLight-dev.tapp/TallieLight-dev.tapp" extensions/dev/tapp/TallieLight-dev.tapp
+          printf '{"name":"TallieLight Dev","file":"TallieLight-dev.tapp","version":"%s","description":"Sports score-based light control (dev build).","author":"Allen Schober"}\n' \
+            "$hex_version" > extensions/dev/extensions.jsonl
+
+          # Future flashing page (copy install/ from main if present)
+          if [ -d "$GITHUB_WORKSPACE/docs/install" ]; then
+            cp -r "$GITHUB_WORKSPACE/docs/install" ./install
+          fi
+
+          git add -A
+          git commit -m "release: ${semver}"
+          git push --force origin gh-pages
+
+      # ── Version bump + tag on main ───────────────────────────────────────
+
+      - name: Bump version on main
+        run: |
+          semver="${{ needs.compute-version.outputs.semver }}"
+          hex_version="${{ needs.compute-version.outputs.hex_version }}"
+
+          sed -i'' -E "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"${hex_version}\"/" manifest.json
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = ${hex_version}/" src/oa_service.be
+          sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = ${hex_version}/" src/tl_service.be
+
+          git add manifest.json src/oa_service.be src/tl_service.be
+          git commit -m "chore: bump version to ${semver}"
+          git tag "${semver}"
+          git push origin main
+          git push origin "${semver}"
+
+      # ── GitHub Release ───────────────────────────────────────────────────
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          tag_name: ${{ needs.compute-version.outputs.semver }}
+          name: ${{ needs.compute-version.outputs.semver }}
+          files: |
+            dist/TallieLight.tapp/TallieLight.tapp
+            dist/TallieLight-dev.tapp/TallieLight-dev.tapp
+            dist/tl-tasmota32.bin/tl-tasmota32.bin
+            dist/tl-dev-tasmota32.bin/tl-dev-tasmota32.bin
+            dist/tl-tasmota32.factory.bin/tl-tasmota32.factory.bin
+            dist/tl-dev-tasmota32.factory.bin/tl-dev-tasmota32.factory.bin

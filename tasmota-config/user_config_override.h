@@ -116,6 +116,11 @@ Examples :
 #ifndef USE_BERRY_MQTTCLIENT
 #define USE_BERRY_MQTTCLIENT
 #endif
+#ifndef USE_WEBCLIENT_HTTPS
+#define USE_WEBCLIENT_HTTPS
+#endif
+#undef  OTA_URL
+#define OTA_URL                "https://ota.tallielight.com/tl-tasmota32.bin"
 
 #ifdef USE_HOME_ASSISTANT
 #undef USE_HOME_ASSISTANT
