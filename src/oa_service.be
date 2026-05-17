@@ -12,7 +12,7 @@
 
 #@ solidify:OAuthService,weak
 class OAuthService
-  static VERSION = 0x01020800  # stamped by bump-version.sh or CI workflow
+  static VERSION = 0x01020900  # stamped by bump-version.sh or CI workflow
   
   var _cached_uid            # cached user id — used on every MQTT (re)connect
   var _cached_token_expiry   # cached token expiry — used on every is_authorized cron tick
