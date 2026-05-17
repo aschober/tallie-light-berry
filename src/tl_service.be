@@ -97,7 +97,7 @@ class TallieLightService
   def _register_device()
     import json
     var tallielight_env = global._tallielight_env
-    var token = global._oauth._get_valid_access_token()
+    var token = global._oauth.get_access_token()
     if token == nil  return {"success": false, "message": "No valid access token"}  end
 
     var team_slugs = []

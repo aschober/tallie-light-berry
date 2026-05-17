@@ -154,6 +154,11 @@ class _Tasmota
 
   def millis() return 12345 end
 
+  def wifi(key)
+    if key == 'mac' return 'AA:BB:CC:DD:EE:FF' end
+    return nil
+  end
+
   def publish_result(payload, topic)
     if !self._cmds.contains('publish_result') end
     self._cmds.push(format("publish_result %s %s", topic, payload))
@@ -268,12 +273,9 @@ def _webclient_factory() return _WebClient() end
 # OAuth service stub
 # ============================================================
 class _OAuthService
-  var device_id
-  def init() self.device_id = 'test-device-id' end
   def is_authorized(refresh) return true end
-  def _get_valid_access_token() return 'test_access_token' end
-  def get_mqtt_username() return 'test_user' end
-  def get_mqtt_client_id() return 'test_client' end
+  def get_access_token() return 'test_access_token' end
+  def get_user_id() return 'test_user_id' end
   def unload() end
 end
 

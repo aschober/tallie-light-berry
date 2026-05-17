@@ -482,7 +482,7 @@ class OAuthService
     return token_valid   # fall back to the (still expired) old answer
   end
 
-  def _get_valid_access_token()
+  def get_access_token()
     if self.is_authorized(false) return self._get("oa_at") end
     return nil
   end
