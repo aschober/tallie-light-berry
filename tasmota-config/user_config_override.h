@@ -86,12 +86,16 @@ Examples :
 
 // !!! Remember that your changes GOES AT THE BOTTOM OF THIS FILE right before the last #endif !!!
 */
-#undef FRIENDLY_NAME
+#undef  FRIENDLY_NAME
 #define FRIENDLY_NAME          "Lampy"
-#undef WIFI_DEFAULT_HOSTNAME
+#undef  WIFI_DEFAULT_HOSTNAME
 #define WIFI_DEFAULT_HOSTNAME  "tallie-%06X"         // [Hostname] Expands to tallie-<last 6 hex chars of MAC address>
 #undef  OTA_URL
 #define OTA_URL                "https://ota.tallielight.com/tl-tasmota32.bin"
+
+// Backlog command to set the default configuration of the device. It will be executed at first boot after flashing or after a reset of the flash settings.
+// If need to update with an OTA, update CFG_HOLDER to a new value to reset the flash settings and execute the backlog command again.
+#define CFG_DEFAULT_CMND       "Backlog0 SetOption43 50; SetOption105 1; Template {\"NAME\":\"Tallie Light\",\"GPIO\":[32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,640,0,0,608,0,0,0,0,0,0,0,0,0,1376,0,0,0,0,0,0,0],\"FLAG\":0,\"BASE\":1}; PixelType 9; WebButton1 \xf0\x9f\x92\xa1"
 
 #ifndef USE_WEBCLIENT_HTTPS
 #define USE_WEBCLIENT_HTTPS

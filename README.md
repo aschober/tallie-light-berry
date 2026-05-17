@@ -55,9 +55,10 @@ The custom build pre-compiles Tallie Light Berry classes into the firmware, redu
 
 1. Download `tl-tasmota32.factory.bin` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
 2. **First flash:** Use the [Tasmota Web Installer](https://tasmota.github.io/install/) for browser-based flashing via USB — no tools required. Click **Connect**, select your device's serial port, choose **Upload factory bin**, and select `tl-tasmota32.factory.bin`.  
-   **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`.
+   **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`. The firmware `OtaUrl` is pre-configured to `https://ota.tallielight.com/tl-tasmota32.bin` so future OTA upgrades can be triggered directly from the Tasmota UI without specifying a URL.
 3. Connect to the `tasmota-XXXXXX` Wi-Fi hotspot, join your network, then apply the hardware template for your board (see [Hardware](#hardware)).
 4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
+5. In **Tools → Extension Manager**, set the extension repo to `https://ota.tallielight.com/extensions/` to receive future Tallie Light `.tapp` updates via the Extension Manager.
 
 ### Option B: Standard Tasmota + `.tapp` extension (~50 KB heap)
 
@@ -142,7 +143,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a full description of the s
 
 ## Releases
 
-Pushing a tag matching `v*` triggers the CI pipeline, which builds and attaches four artifacts to a GitHub Release:
+Releases are triggered manually from the GitHub Actions UI via the **Build Release** workflow (`workflow_dispatch`). Select a `bump` component (`major`, `minor`, or `patch`) or provide an explicit `version` string (e.g. `1.3.0`). The workflow:
+
+1. Bumps the version, builds all artifacts, and deploys the extension index and OTA binaries to `https://ota.tallielight.com` via the `gh-pages` branch.
+2. Commits the version bump to `main`, creates a `vA.B.C.0` git tag, and publishes a GitHub Release with all artifacts attached.
+
+Every push to `main` also triggers the **Build App** workflow, which produces snapshot `.tapp` artifacts (versioned `vA.B.C.<commit-count>`) available as GitHub Actions artifacts for testing without cutting a full release.
+
+### Release artifacts
 
 | Artifact | Description |
 |---|---|
@@ -153,4 +161,17 @@ Pushing a tag matching `v*` triggers the CI pipeline, which builds and attaches 
 | `tl-tasmota32.factory.bin` | Production factory image — first flash via esptool at `0x0` |
 | `tl-dev-tasmota32.factory.bin` | Dev factory image — first flash via esptool at `0x0` |
 
-The tag must be four-part (e.g. `v1.2.0.0`) and match the `version` field in `manifest.json`. Each build variant pulls secrets from its matching GitHub Environment (`dev` or `prod`).
+### OTA delivery
+
+Released firmware and `.tapp` files are served from `https://ota.tallielight.com` (GitHub Pages, `gh-pages` branch):
+
+| URL | Content |
+|---|---|
+| `/tl-tasmota32.bin` | Production firmware OTA binary |
+| `/tl-dev-tasmota32.bin` | Dev firmware OTA binary |
+| `/extensions/extensions.jsonl` | Production Extension Manager index |
+| `/extensions/tapp/TallieLight.tapp` | Production `.tapp` |
+| `/extensions/dev/extensions.jsonl` | Dev Extension Manager index |
+| `/extensions/dev/tapp/TallieLight-dev.tapp` | Dev `.tapp` |
+
+Each build variant pulls secrets from its matching GitHub Environment (`dev` or `prod`).
