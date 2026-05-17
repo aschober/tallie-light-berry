@@ -2,19 +2,20 @@
 
 # Version bump helper for sports-lamp-berry.
 #
-# Note: The 'build' component (vA.B.C.D) is typically incremented by CI for snapshot builds.
-# Only .0 is used for release tags. This script does not increment the build component directly;
-# it is reserved for automated workflows.
+# Versioning model:
+#   - Release tags are always vA.B.C.0, created by this script
+#   - CI derives snapshot build numbers by counting commits since the last .0 tag;
+#     the in-file build component is ignored for non-release builds
+#   - The next --patch/--minor/--major release bumps the appropriate component and
+#     resets build to .0
 #
 # What this script does:
 # - updates version in manifest.json, src/oa_service.be, and src/tl_service.be
 # - creates a release commit and semantic tag (vA.B.C.D)
-# - optionally creates a second "next development" commit after a .0 release
 #
 # Typical usage:
-# - release now:          --patch / --minor / --major
-# - release + clock fwd:  default for .0 releases
-# - preview only:         --dry-run
+# - release now:   --patch / --minor / --major
+# - preview only:  --dry-run
 
 set -e
 
@@ -35,7 +36,6 @@ Options:
   --major              Bump major version (e.g., 0x01020100 -> 0x02000000)
   --minor              Bump minor version (e.g., 0x01020100 -> 0x01030000)
   --patch              Bump patch version (e.g., 0x01020100 -> 0x01020200)
-  --no-next-dev        Disable default clock-forward after .0 release bumps
   --dry-run            Show what would happen without making changes
   -h, --help           Show this help
 
@@ -49,11 +49,8 @@ Examples:
     Preview a patch release (no files changed, no commit, no tag)
 
   $0 --patch
-    Release patch (.0), create tag, then start next patch dev line
-    Example: release v1.2.2.0, then commit v1.2.3.0
-
-  $0 --patch --no-next-dev
-    Release patch only (single commit + tag, no follow-up dev commit)
+    Release patch: bump patch, reset build to .0, create commit and tag
+    Example: v1.2.1.5 -> release v1.2.2.0
 
   $0
     Interactive mode (prompts for semantic or hex version)
@@ -61,7 +58,7 @@ Examples:
 Version Format:
   Internal: 0x[MAJOR][MINOR][PATCH][BUILD] where each component is 2 hex digits
   Example: 0x01020100 = major.1 minor.2 patch.1 build.0
-  
+
   Git Tag: v[MAJOR].[MINOR].[PATCH].[BUILD] (semantic versioning)
   Example: v1.2.1.0
 
@@ -70,7 +67,7 @@ Environment:
     - manifest.json (version field)
     - src/oa_service.be (static VERSION)
     - src/tl_service.be (static VERSION)
-  
+
   Then creates a commit and git tag (in semantic version format).
 EOF
   exit "$1"
@@ -96,12 +93,12 @@ parse_version() {
   # Remove 0x prefix and convert to uppercase (portable for older bash)
   version="${version#0x}"
   version=$(echo "$version" | tr 'a-z' 'A-Z')
-  
+
   local major=$(echo "$version" | cut -c1-2)
   local minor=$(echo "$version" | cut -c3-4)
   local patch=$(echo "$version" | cut -c5-6)
   local build=$(echo "$version" | cut -c7-8)
-  
+
   echo "$major $minor $patch $build"
 }
 
@@ -111,7 +108,7 @@ format_version() {
   local minor=$2
   local patch=$3
   local build=$4
-  
+
   # Pad with zeros and format as hex
   printf "0x%02X%02X%02X%02X" "$major" "$minor" "$patch" "$build"
 }
@@ -186,13 +183,13 @@ normalize_version_input() {
 bump_component() {
   local current=$1
   local component=$2
-  
+
   read -r major minor patch build <<< "$(parse_version "$current")"
   major=$((16#$major))
   minor=$((16#$minor))
   patch=$((16#$patch))
   build=$((16#$build))
-  
+
   case "$component" in
     major)
       major=$((major + 1))
@@ -209,11 +206,8 @@ bump_component() {
       patch=$((patch + 1))
       build=0
       ;;
-    build)
-      build=$((build + 1))
-      ;;
   esac
-  
+
   format_version "$major" "$minor" "$patch" "$build"
 }
 
@@ -221,9 +215,8 @@ bump_component() {
 main() {
   local new_version=""
   local bump_type=""
-  local no_next_dev=false
   local dry_run=false
-  
+
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case $1 in
@@ -241,10 +234,6 @@ main() {
         ;;
       --dry-run)
         dry_run=true
-        shift
-        ;;
-      --no-next-dev)
-        no_next_dev=true
         shift
         ;;
       -h|--help)
@@ -284,25 +273,13 @@ main() {
 
   # Validate
   validate_hex_version "$new_version"
-  
+
   if [ "$new_version" = "$current_version" ]; then
     echo -e "${YELLOW}New version is same as current version ($current_version)${NC}"
     exit 1
   fi
 
-  # Generate semantic version for tag
   local semver=$(hex_to_semver "$new_version")
-  local should_next_dev=false
-
-  # Default Maven-like behavior: after releasing vA.B.C.0, start next patch line
-  # unless explicitly disabled.
-  if [ "$no_next_dev" = false ]; then
-    read -r _ _ _ build_hex <<< "$(parse_version "$new_version")"
-    if [ $((16#$build_hex)) -eq 0 ]; then
-      should_next_dev=true
-      echo -e "${YELLOW}.0 release detected; defaulting to next patch development bump${NC}"
-    fi
-  fi
 
   if [ "$dry_run" = true ]; then
     echo -e "${YELLOW}DRY RUN - No changes will be made${NC}"
@@ -317,20 +294,13 @@ main() {
     echo "Would create:"
     echo "  - Commit: \"Bump version to $semver\""
     echo "  - Tag: $semver"
-    if [ "$should_next_dev" = true ]; then
-      local next_dev_version
-      local next_dev_semver
-      next_dev_version=$(bump_component "$new_version" "patch")
-      next_dev_semver=$(hex_to_semver "$next_dev_version")
-      echo "  - Commit: \"Start next development iteration at $next_dev_semver\""
-    fi
     echo ""
     echo "To apply these changes, run without --dry-run"
     return 0
   fi
-  
+
   echo -e "${GREEN}Bumping version from $current_version to $new_version${NC}"
-  
+
   # Update manifest.json
   echo "Updating manifest.json..."
   sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$new_version\"/" "$SCRIPT_DIR/manifest.json"
@@ -358,26 +328,6 @@ main() {
   # Create git tag with semantic version
   echo -e "${GREEN}Creating git tag...${NC}"
   git tag "$semver"
-
-  if [ "$should_next_dev" = true ]; then
-    local next_dev_version
-    local next_dev_semver
-    next_dev_version=$(bump_component "$new_version" "patch")
-    next_dev_semver=$(hex_to_semver "$next_dev_version")
-
-    echo -e "${GREEN}Advancing to next patch development line...${NC}"
-    echo "Updating manifest.json..."
-    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$next_dev_version\"/" "$SCRIPT_DIR/manifest.json"
-
-    echo "Updating oa_service.be..."
-    sed -i '' "s/static VERSION = 0x[0-9A-Fa-f]*/static VERSION = $next_dev_version/" "$SCRIPT_DIR/src/oa_service.be"
-
-    echo "Updating tl_service.be..."
-    sed -i '' "s/static VERSION = 0x[0-9A-Fa-f]*/static VERSION = $next_dev_version/" "$SCRIPT_DIR/src/tl_service.be"
-
-    git add manifest.json src/oa_service.be src/tl_service.be
-    git commit -m "Start next development iteration at $next_dev_semver"
-  fi
 
   echo -e "${GREEN}✓ Version bumped successfully${NC}"
   echo "  Hex:    $new_version"
