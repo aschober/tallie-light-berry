@@ -12,7 +12,7 @@
 
 #@ solidify:OAuthService,weak
 class OAuthService
-  static VERSION = 0x01020600  # stamped by bump-version.sh or CI workflow
+  static VERSION = 0x01020700  # stamped by bump-version.sh or CI workflow
   
   var device_id              # cached device id — never changes after first boot
   var _cached_uid            # cached user id — used on every MQTT (re)connect

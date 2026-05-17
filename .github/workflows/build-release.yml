@@ -268,7 +268,7 @@ jobs:
           sed -i'' -E "s/static VERSION[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]*/static VERSION = ${hex_version}/" src/tl_service.be
 
           git add manifest.json src/oa_service.be src/tl_service.be
-          git commit -m "chore: bump version to ${semver}"
+          git commit -m "release: bump version to ${semver}"
           git tag "${semver}"
           git push origin main
           git push origin "${semver}"
