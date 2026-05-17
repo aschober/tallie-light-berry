@@ -338,6 +338,9 @@ _el('animation-type').value = conf.animationType ?? 'breathe';
         authedEmailSlot.appendChild(emailRow);
         authedEmailSlot.appendChild(subscriptionRow);
         needsBillingFetch = true;
+        // Re-populate cards that were created while auth was pending/unauthed —
+        // fetchLeagues() returned [] at that time, so the league/team dropdowns are empty.
+        for (const card of teamCards.children) populateLeagues(card);
       } else {
         defaultEmailSlot.appendChild(emailRow);
         defaultEmailSlot.appendChild(subscriptionRow);
