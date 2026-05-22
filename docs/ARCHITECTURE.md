@@ -12,7 +12,9 @@ The extension is packaged as a `.tapp` archive (a zip of Berry source files and 
 | **Active Event** | The single event currently driving the light display |
 | **Saved Light State** | A snapshot of the light's color/brightness/power taken before any team change, used for restoration |
 | **Pinned Team** | A user-selected team that takes priority over all automatic event selection |
-| **TL_MUTED** | Mode when an event is active but the light is off — entered when the user turns the light off, clicks ■ to mute, unpins a team with another winner still active, or when a new winning event arrives with `turn_on_light=false` and the light is already off |
+| **Active** | Light is on and showing the team color — either animated (`TL_ANIM`) or solid (`TL_SOLID`) |
+| **Muted** | Tracking the team silently; light is off (`TL_MUTED`) |
+| **Inactive** | Team is winning or has won, but the light is not showing the team color — another team is active, or no pin is set |
 
 ---
 
@@ -20,15 +22,15 @@ The extension is packaged as a `.tapp` archive (a zip of Berry source files and 
 
 ```berry
 var TL_IDLE  = 0   # no active event; light is user-controlled
-var TL_SOLID = 1   # final win — solid team color, light on
-var TL_ANIM  = 2   # in-progress win — animated team color, light on
-var TL_MUTED = 3   # event is active but light is off
+var TL_SOLID = 1   # Active (final win) — solid team color, light on
+var TL_ANIM  = 2   # Active (in-progress win) — animated team color, light on
+var TL_MUTED = 3   # Muted — event is active but light is off
 ```
 
-`TL_MUTED` unifies all "event active, light off" entry paths:
-- User manually turned the light off during an active event
+`TL_MUTED` (Muted) unifies all "event active, light off" entry paths:
+- User manually turned the light off during an Active event
 - New winning event arrived with `turn_on_light=false` and light already off
-- User clicked ■ in the Web UI to mute the active event
+- User clicked ■ in the Web UI to Mute the Active event
 - User unpinned a team while another winning event was active
 
 In all cases the team color is staged via `light.set()` (preserving brightness, keeping light off), `saved_light.power` is set to `false` (so a future timeout restore keeps the light off), and the system waits for power-on. On power-on, `saved_light.power` is updated to `true` and `_set_active_event()` re-runs and enters `TL_SOLID` or `TL_ANIM`.
@@ -38,20 +40,20 @@ In all cases the team color is staged via `light.set()` (preserving brightness, 
 ## State Machine
 
 ```
-TL_IDLE ──── winning event, light on ────────────────────────► TL_ANIM
+TL_IDLE ──── winning event, light on ────────────────────────► TL_ANIM  (Active)
    ▲                                                              │
    │                                                    game ends, still winning
    │                                                              │
    │                                                              ▼
-   │                                                           TL_SOLID
+   │                                                     TL_SOLID (Active)
    │                                                              │
    │◄──── timeout / no longer winning ────────────────────────────┤
    │                                                              │
    │              user turns off / clicks ■ / unpin ──────────► TL_MUTED ◄──────┐
-   │                                                              │             │
+   │                                                              │  (Muted)    │
    │◄──── timeout while muted ─────────────────────────────────── │             │
    │                                                              │             │
-   │◄──── user clicks ▣ (deactivate) ──────────────────────────── │             │
+   │◄──── user clicks ▣ (Deactivate) ──────────────────────────── │             │
    │                                                              │             │
    ▲◄──── user turns light on ──── re-enters TL_ANIM/TL_SOLID ────┘             │
                                                                                 │
@@ -62,11 +64,11 @@ TL_IDLE ──── winning event, light off + turn_on_light=false ────
 
 **TL_IDLE** — No active event. Light is user-controlled. MQTT events are evaluated on arrival.
 
-**TL_ANIM** — A tracked team is winning an in-progress game. Light shows team color + animation (breathe, comet, or crenel). A timeout timer runs for `light_restore_mins` from `last_updated`.
+**TL_ANIM** — Active. A tracked team is winning an in-progress game. Light shows team color + animation (breathe, comet, or crenel). A timeout timer runs for `light_restore_mins` from `last_updated`.
 
-**TL_SOLID** — A tracked team has won a completed game. Light shows solid team color. Same timeout applies.
+**TL_SOLID** — Active. A tracked team has won a completed game. Light shows solid team color. Same timeout applies.
 
-**TL_MUTED** — Event is active, team color is set, but light is off. Timeout still applies.
+**TL_MUTED** — Muted. Event is active, team color is staged, but light is off. Timeout still applies.
 
 ---
 
@@ -99,7 +101,7 @@ Scheduled games (`state == "pre"`) never trigger light changes.
 2. Call `_apply_event_change(_calculate_active_event(), false)`
 3. If unchanged (`_event_unchanged()`) → no-op
 4. If new event is nil → `_restore_light_state()`
-5. If mode is `TL_MUTED` and not user-initiated → update `active_event` in memory only, no light change
+5. If mode is `TL_MUTED` (Muted) and not user-initiated → update `active_event` in memory only, no light change
 6. Otherwise → `_set_active_event(new_ev, user_initiated)`
 
 ### `_set_active_event()` Decision Tree
@@ -112,12 +114,12 @@ Compute end_time (pinned: now + restore_mins; auto: last_updated + restore_mins)
         │
         ▼
   Light off AND turn_on_light=false AND NOT user_initiated?
-        │ yes → light.set() stages color silently → TL_MUTED
+        │ yes → light.set() stages color silently → TL_MUTED (Muted)
         │ no
         ▼
   event.is_winner() (final)?
-        │ yes → set_solid() → TL_SOLID
-        │ no  → set_animation() → TL_ANIM
+        │ yes → set_solid() → TL_SOLID (Active)
+        │ no  → set_animation() → TL_ANIM (Active)
         │
         ▼
   Set event timer for end_time
@@ -130,34 +132,34 @@ Compute end_time (pinned: now + restore_mins; auto: last_updated + restore_mins)
 3. If another winner exists → `_set_active_event()`; otherwise → `_restore_light_state()`
 
 ### User Turns Light OFF
-- If `state.mode` is `TL_ANIM` or `TL_SOLID` → `TL_MUTED` (animation stopped, event and timer preserved)
+- If Active (`TL_ANIM` or `TL_SOLID`) → Muted (`TL_MUTED`; animation stopped, event and timer preserved)
 - If `TL_IDLE` → `_restore_light_state()` if a saved state exists
 
-### User Turns Light ON (while TL_MUTED)
+### User Turns Light ON (while Muted / TL_MUTED)
 - Updates `saved_light.power = true` (so a subsequent timeout restore leaves the light on)
-- Clears `active_event` to force re-evaluation, then calls `_apply_event_change(_calculate_active_event(), true)` — re-enters `TL_ANIM` or `TL_SOLID`
+- Clears `active_event` to force re-evaluation, then calls `_apply_event_change(_calculate_active_event(), true)` — re-enters Active (`TL_ANIM` or `TL_SOLID`)
 
 ### User Changes Color or Saturation Manually
 - Detected via Tasmota HSB rule (registered 500ms after team light is set)
 - If hue or saturation differs from team color: clear `saved_light` (no restore), exit to `TL_IDLE`
 - If only brightness changes: update `saved_light.bri`; no mode change
 
-### User Pins a Team (□→■)
+### User Activates a Team (□→■)
 - `state.pinned_slug` set; `_apply_event_change()` called with `user_initiated=true`
 - Pinned team's event used as long as `is_winning()` returns true
 
 ### User Mutes a Team (■→▣)
 - `mute_team_light()` — preserves `pinned_slug` and `active_event`
-- Stages team color via `light.set()` (preserving brightness, keeping light off) → `TL_MUTED`
-- On power-on, re-enters `TL_ANIM` or `TL_SOLID`
+- Stages team color via `light.set()` (preserving brightness, keeping light off) → `TL_MUTED` (Muted)
+- On power-on, re-enters `TL_ANIM` or `TL_SOLID` (Active)
 
 ### User Deactivates (▣→□)
-- `activate_team_light(nil)` while already `TL_MUTED` → `_restore_light_state()` → `TL_IDLE`
+- `activate_team_light(nil)` while already `TL_MUTED` (Muted) → `_restore_light_state()` → `TL_IDLE`
 - Clears pin, active event, and saved light
 
 ### User Unpins from Active State (■→▣ or ■→□)
-- `activate_team_light(nil)` while `TL_ANIM` or `TL_SOLID`:
-  - If another winning event exists → `TL_MUTED` with that event staged (not the pinned team)
+- `activate_team_light(nil)` while Active (`TL_ANIM` or `TL_SOLID`):
+  - If another winning event exists → `TL_MUTED` (Muted) with that event staged (not the pinned team)
   - If no other winners → `_restore_light_state()` → `TL_IDLE`
 
 ---
@@ -287,9 +289,9 @@ Each team row in the web UI shows a colored indicator that cycles through three 
 
 | Indicator | Meaning | Click action |
 |---|---|---|
-| □ outline square | Team is winning but not the active event | → ■ activate (`activate-team-light`) |
-| ■ filled square | Active event, light on (`TL_ANIM` / `TL_SOLID`) | → ▣ mute (`mute-team-light`) |
-| ▣ square with fill | Active event, light off (`TL_MUTED`) | → □ deactivate (`unpin-team-light`) |
+| ■ filled square | Active: light on (`TL_ANIM` / `TL_SOLID`) | → ▣ Mute (`mute-team-light`) |
+| ▣ square with fill | Muted: tracking silently, light off (`TL_MUTED`) | → □ Deactivate (`unpin-team-light`) |
+| □ outline square | Inactive: winning but light is not team color | → ■ Activate (`activate-team-light`) |
 | _(none)_ | Team is not winning | not clickable |
 
 All three actions POST to `/tl`.
@@ -378,30 +380,30 @@ bash tests/web/build-test-page.sh --refresh-style
 | 17 | `test_17_unpin_with_winner_still_active` | Unpin while active event still winning | TL_ANIM with B pinned; B still winning; user unpins | → TL_MUTED with B staged |
 | 17b | `test_17b_unpin_restores_when_no_winners` | Unpin with no winners | TL_ANIM with B pinned; B now losing; user unpins | → TL_IDLE, `_restore_light_state()` |
 | 17c | `test_17c_unpin_muted_then_power_on_reactivates` | Unpin → TL_MUTED → power-on reactivates correct color | TL_ANIM with B pinned; unpin → TL_MUTED with A; power on | → TL_ANIM with A's color |
-| 17d | `test_17d_activate_then_mute` | □→■→▣: activate then mute | A winning; pin A → TL_ANIM; mute | → TL_MUTED, pin preserved, color staged |
-| 17e | `test_17e_mute_unpinned_auto_winner` | ■→▣ on unpinned auto-winner | A winning (no pin); TL_ANIM; mute | → TL_MUTED, no pin, event preserved |
-| 17f | `test_17f_unpin_while_muted_restores` | ▣→□ via mute entry path | Pin A → mute → TL_MUTED; deactivate | → TL_IDLE, light restored |
-| 17g | `test_17g_power_off_muted_then_unpin_restores` | ▣→□ via power-off entry path | TL_ANIM; power off → TL_MUTED; deactivate | → TL_IDLE, light restored |
+| 17d | `test_17d_activate_then_mute` | □→■→▣: Activate then Mute | A winning; pin A → TL_ANIM (Active); Mute | → TL_MUTED (Muted), pin preserved, color staged |
+| 17e | `test_17e_mute_unpinned_auto_winner` | ■→▣ Mute unpinned auto-winner | A winning (no pin); TL_ANIM (Active); Mute | → TL_MUTED (Muted), no pin, event preserved |
+| 17f | `test_17f_unpin_while_muted_restores` | ▣→□ Deactivate via Mute entry path | Pin A → Mute → TL_MUTED (Muted); Deactivate | → TL_IDLE, light restored |
+| 17g | `test_17g_power_off_muted_then_unpin_restores` | ▣→□ Deactivate via power-off entry path | TL_ANIM (Active); power off → TL_MUTED (Muted); Deactivate | → TL_IDLE, light restored |
 
-#### TL_MUTED — entry paths
+#### Muted (TL_MUTED) — entry paths
 
 | # | Test function | Scenario | Setup | Expected |
 |---|---|---|---|---|
-| 18 | `test_18_power_off_during_anim` | User turns light off during TL_ANIM | TL_ANIM, A winning; Power1#State=0 fires | → TL_MUTED, animation stopped, event preserved |
-| 19 | `test_19_power_off_during_solid` | User turns light off during TL_SOLID | TL_SOLID, A finalist; Power1#State=0 fires | → TL_MUTED, event preserved |
+| 18 | `test_18_power_off_during_anim` | User turns light off while Active (TL_ANIM) | TL_ANIM (Active), A winning; Power1#State=0 fires | → TL_MUTED (Muted), animation stopped, event preserved |
+| 19 | `test_19_power_off_during_solid` | User turns light off while Active (TL_SOLID) | TL_SOLID (Active), A finalist; Power1#State=0 fires | → TL_MUTED (Muted), event preserved |
 | 20 | `test_20_inprogress_light_off_no_auto_on` | New in-progress event, light off, turn_on_light=false | A in/winning; light off; turn_on_light=false | → TL_MUTED, color staged via `light.set()` |
 | 21 | `test_21_final_light_off_no_auto_on` | New final event, light off, turn_on_light=false | A post/winner; light off; turn_on_light=false | → TL_MUTED, color staged via `light.set()` |
 
-#### TL_MUTED — exit paths
+#### Muted (TL_MUTED) — exit paths
 
 | # | Test function | Scenario | Setup | Expected |
 |---|---|---|---|---|
-| 22 | `test_22_power_on_muted_inprogress` | Power-on while muted (in-progress event) | TL_MUTED, A in/winning; Power1#State=1 fires | → TL_ANIM with A |
-| 22b | `test_22b_power_on_muted_updates_saved_light` | Power-on while muted updates `saved_light.power` | TL_MUTED; power-off set `saved_light.power=false`; user powers on | `saved_light.power` updated to `true` before re-activating |
-| 23 | `test_23_power_on_muted_final` | Power-on while muted (final event) | TL_MUTED, A post/winner; Power1#State=1 fires | → TL_SOLID with A |
-| 24 | `test_24_pin_overrides_muted` | Manual pin overrides muted | TL_MUTED; user pins B winning | user_initiated=true → TL_ANIM/TL_SOLID with B |
-| 25 | `test_25_timeout_while_muted` | Event timeout while muted | TL_MUTED; timeout fires | → TL_IDLE, `_restore_light_state()` |
-| 26 | `test_26_update_while_muted` | New MQTT update while muted, different winner | TL_MUTED with A; B now higher priority winner | Stays TL_MUTED, staged color updates to B |
+| 22 | `test_22_power_on_muted_inprogress` | Power-on while Muted (in-progress event) | TL_MUTED (Muted), A in/winning; Power1#State=1 fires | → TL_ANIM (Active) with A |
+| 22b | `test_22b_power_on_muted_updates_saved_light` | Power-on while Muted updates `saved_light.power` | TL_MUTED (Muted); power-off set `saved_light.power=false`; user powers on | `saved_light.power` updated to `true` before becoming Active |
+| 23 | `test_23_power_on_muted_final` | Power-on while Muted (final event) | TL_MUTED (Muted), A post/winner; Power1#State=1 fires | → TL_SOLID (Active) with A |
+| 24 | `test_24_pin_overrides_muted` | Activate overrides Muted | TL_MUTED (Muted); user pins B winning | user_initiated=true → TL_ANIM/TL_SOLID (Active) with B |
+| 25 | `test_25_timeout_while_muted` | Event timeout while Muted | TL_MUTED (Muted); timeout fires | → TL_IDLE, `_restore_light_state()` |
+| 26 | `test_26_update_while_muted` | New MQTT update while Muted, different winner | TL_MUTED (Muted) with A; B now higher priority winner | Stays Muted, staged color updates to B |
 
 #### Update idempotency and progression
 

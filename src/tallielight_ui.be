@@ -31,9 +31,9 @@ class TallieLight_UI
   # Pre-built HTML wrappers for web_sensor() scoreboard rendering (allocated once at class definition)
   static _pre_plain_open = "<pre style='margin:0;font-family:monospace;font-size:14px;display:inline-block;'>"
   # The clickable version (_pre_click_open) cycles the indicator through three states:
-  # □ = inactive           → activate_team_light=<slug>    → ■
-  # ■ = active+on          → mute_team_light=<slug>        → ▣
-  # ▣ = muted(active+off)  → deactivate_team_light=<slug>  → □
+  # □ = Inactive (winning, light not team color) → activate_team_light=<slug>    → ■
+  # ■ = Active (light on, team color)            → mute_team_light=<slug>        → ▣
+  # ▣ = Muted (tracking silently, light off)     → deactivate_team_light=<slug>  → □
   static _pre_click_open = "<pre data-slug='%s' onclick=\"var sl=this.dataset.slug,si=this.querySelector('.si'),cur=si?si.innerHTML:'',b;if(cur=='\\u25a0'){b='mute_team_light='+sl;if(si)si.innerHTML='\\u25a3'}else if(cur=='\\u25a3'){b='deactivate_team_light='+sl;document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'})}else{document.querySelectorAll('.si').forEach(function(e){e.innerHTML='\\u25a1'});b='activate_team_light='+sl;if(si)si.innerHTML='\\u25a0'}fetch('/tl',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b})\" style='margin:0;font-family:monospace;font-size:14px;display:inline-block;cursor:pointer;'>"
   static _pre_close = "</pre>"
   static _pad7 = ["", " ", "  ", "   ", "    ", "     ", "      ", "       "]
@@ -190,9 +190,9 @@ class TallieLight_UI
       var is_active_event = (tallielight.get().state.active_event != nil &&
                              tallielight.get().state.active_event.competitor_slug == team_slug)
 
-      # ■ (&#9632) filled square = active + light on (TL_SOLID/TL_ANIM)
-      # ▣ (&#9635) square with fill = active + light off (TL_MUTED)
-      # □ (&#9633) outline square = winning but not active
+      # ■ (&#9632) filled square   = Active: light on (TL_SOLID/TL_ANIM)
+      # ▣ (&#9635) square with fill = Muted: tracking silently, light off (TL_MUTED)
+      # □ (&#9633) outline square  = Inactive: winning but light is not team color
       var indicator_color = nil
       var indicator_char = nil
       if is_active_event
