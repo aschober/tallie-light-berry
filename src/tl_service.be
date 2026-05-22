@@ -451,7 +451,11 @@ class TallieLightService
     else
       print(format('TAL: _set_active_event: set_animation rgb=%s', self.state.team_color_map['rgb']))
       self.state.animation = self.lc.set_animation(self.state.team_color_map, self.config.animation_type)
-      self._set_mode(TallieLightService.TL_ANIM, format('%s winning %s-%s (%s)', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score, self.config.animation_type))
+      if self.state.animation == nil
+        self._set_mode(TallieLightService.TL_SOLID, format('%s winning %s-%s (%s)', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score, self.config.animation_type))
+      else
+        self._set_mode(TallieLightService.TL_ANIM, format('%s winning %s-%s (%s)', new_ev.competitor_abbreviation, new_ev.competitor_score, new_ev.opponent_score, self.config.animation_type))
+      end
     end
 
     var duration = end_time - now

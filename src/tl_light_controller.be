@@ -93,6 +93,8 @@ class TLLightController
       anim.max_brightness = br[1]
       anim.curve_factor = 2
       anim.period = 3000
+    elif anim_type == 'solid'
+      return nil
     else
       var num_pixels = self._anim_engine.get_strip().pixel_count()
       anim = animation.crenel(self._anim_engine)
