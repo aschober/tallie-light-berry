@@ -1,8 +1,39 @@
 # Tallie Light Berry
 
-Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry app for ESP32 LED controllers. It watches live sports scores from the Tallie cloud and drives an LED strip to celebrate when a favorite team is winning or has won — animating LEDs in the team's color during the game and solid color when the game ends. After the celebration is over (based on a user-selected timer), the light restores to its prior state. Tallie Light can be configured to automatically turn on when winning or can be configured to be your team's color the next time it is manually turned on.
+Tallie Light is a [Tasmota](https://tasmota.github.io/) Berry app for ESP32 LED controllers. It watches live sports scores from the Tallie Cloud and drives an LED strip to celebrate when a favorite team is winning or has won — animating LEDs in the team's color during the game and solid color when the game ends. After the celebration is over (based on a user-selected timer), the light restores to its prior state. Tallie Light can be configured to automatically turn on when winning or can be configured to be your team's color the next time it is manually turned on.
 
 The device authenticates with the Tallie Cloud using OAuth 2.0 Device Authorization Flow. Once authorized, the Tallie Cloud provisions MQTT credentials and a set of topic subscriptions for each team the user has configured. Game updates arrive over MQTT and are processed entirely on-device.
+
+## How it works
+
+```
+Team is winning (live game)                 →  LED animates in team color
+Team wins (game final)                      →  LED solid in team color
+Timer expires, team not playing, team lost  →  LED restores to prior state
+Light turned off while wininng or won       →  Event silently tracked; color applied on next power-on
+```
+
+### Scoreboard
+
+<img width="440" alt="scoreboard" src="https://github.com/user-attachments/assets/f19cea10-29c2-4bd6-b9be-67316d04d708" />
+
+The Tasmota main page shows a live scoreboard widget for all tracked teams. Each team row shows a live indicator you can click to activate, mute, or deactivate the celebration:
+
+| Indicator | Meaning |
+|---|---|
+| ■ filled square | Active: Team is winning or has won and light is on in team color — click to Mute |
+| ▣ square with fill | Muted: tracking team silently, light is off — click to Deactivate |
+| □ outline square | Deactivate: Team is winning or has won, but light is not the team color — click to Activate |
+
+### Settings
+The settings page (served from the device's Tasmota web UI) lets you:
+- Sign in with your Tallie account
+- Search for and add teams
+- Choose which team color to display (primary, alternate, or custom)
+- Set a celebration timer (how long the light stays in team color after an event ends)
+- Control whether the light turns on automatically when a team starts winning
+
+<img width="470" alt="settings" src="https://github.com/user-attachments/assets/11e7b34f-fcbf-421c-8bf0-ea81905f5bea" />
 
 ## Hardware
 
