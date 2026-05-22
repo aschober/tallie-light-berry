@@ -10,7 +10,7 @@ The device authenticates with the Tallie Cloud using OAuth 2.0 Device Authorizat
 Team is winning (live game)                 →  LED animates in team color
 Team wins (game final)                      →  LED solid in team color
 Timer expires, team not playing, team lost  →  LED restores to prior state
-Light turned off while wininng or won       →  Event silently tracked; color applied on next power-on
+Light turned off while winning or won       →  Event silently tracked; color applied on next power-on
 ```
 
 ### Scoreboard
@@ -23,7 +23,7 @@ The Tasmota main page shows a live scoreboard widget for all tracked teams. Each
 |---|---|
 | ■ filled square | Active: Team is winning or has won and light is on in team color — click to Mute |
 | ▣ square with fill | Muted: tracking team silently, light is off — click to Deactivate |
-| □ outline square | Deactivate: Team is winning or has won, but light is not the team color — click to Activate |
+| □ outline square | Inactive: Team is winning or has won, but light is not the team color — click to Activate |
 
 ### Settings
 The settings page (served from the device's Tasmota web UI) lets you:
@@ -43,7 +43,7 @@ A ready-to-use Tallie Light device with firmware pre-installed. No assembly or f
 
 ### Option 2: Build your own
 
-Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip -- commonly known as WLED-compatible or Tasmota-compatible controllers. Tallie Light was developed using an [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/6160), a compact ESP32 board with built-in fuse and 5V level shifter, an [Adafruit I2C Stemma QT Rotary Encoder](https://www.adafruit.com/product/4991), and a Ring of 16x RGBW 5050 LEDs. Any ESP32 running Tasmota with a NeoPixel-compatible LED strip should work with minor GPIO adjustments.
+Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip — commonly known as WLED-compatible or Tasmota-compatible controllers. Tallie Light was developed using an [Adafruit Sparkle Motion Mini](https://www.adafruit.com/product/6160), a compact ESP32 board with built-in fuse and 5V level shifter, an [Adafruit I2C Stemma QT Rotary Encoder](https://www.adafruit.com/product/4991), and a Ring of 16x RGBW 5050 LEDs. Any ESP32 running Tasmota with a NeoPixel-compatible LED strip should work with minor GPIO adjustments.
 
 
 1. The [Tasmota Template](https://tasmota.github.io/docs/Templates/) for the Adafruit Sparkle Motion Mini, I2C rotary encoder, and RGBW LEDs is:
@@ -60,7 +60,23 @@ Tallie Light runs on any ESP32 with a connected LED (WS2812 / SK6812) strip -- c
 > Backlog0 Timezone 99; TimeStd 0,1,11,1,2,-300; TimeDst 0,2,3,1,2,-240
 ```
 
-#### Custom Tasmota firmware
+## Installation
+
+There are two ways to install Tallie Light, depending on whether you use a pre-built Tasmota image with Tallie Light compiled into the firmware (Option A) or your own Tasmota build with Tallie Light installed as an Extension (`.tapp`) (Option B).
+
+### Option A: Pre-Built Tasmota firmware with Tallie Light included (recommended, uses ~30 KB heap)
+
+The custom build pre-compiles Tallie Light Berry classes into the firmware, reducing heap usage by roughly 20 KB compared to the Extension Manager approach.
+
+1. Download `tl-tasmota32.factory.bin` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
+2. **First flash:** Use the [Tasmota Web Installer](https://tasmota.github.io/install/) for browser-based flashing via USB — no tools required. Click **Connect**, select your device's serial port, choose **Upload factory bin**, and select `tl-tasmota32.factory.bin`.  
+   **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`. The firmware `OtaUrl` is pre-configured to `https://ota.tallielight.com/tl-tasmota32.bin` so future OTA upgrades can be triggered directly from the Tasmota UI without specifying a URL.
+3. Connect to the `tasmota-XXXXXX` Wi-Fi hotspot, join your network, then apply the hardware template for your board (see [Hardware](#hardware)).
+4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
+
+### Option B: Tasmota Build & Install Tallie Light via Extension Manager (uses ~50 KB heap)
+
+If you are comfortable building Tasmota and need additional Tasmota features enabled, you can create a custom build of Tasmota and then install Tallie Light as a Berry app extension. This uses more heap because all Tallie Light Berry classes are loaded at runtime rather than compiled into the firmware.
 
 Tallie Light requires a custom Tasmota build to include the Berry MQTT client. Standard Tasmota releases do not include all necessary features. Add the following to `user_config_override.h` before building:
 
@@ -76,29 +92,12 @@ Tallie Light requires a custom Tasmota build to include the Berry MQTT client. S
 #define USE_BERRY_ANIMATION
 ```
 
-## Installation
+1. Build Tasmota with `USE_BERRY_MQTTCLIENT`, `USE_MQTT_TLS`, `USE_MQTT_AWS_IOT_LIGHT`, and `USE_BERRY_ANIMATION`. Install Tasmota and complete initial setup.
+2. In the Tasmota Web UI, go to **Tools → Extension Manager**, set the Extension Repo to `https://ota.tallielight.com/extensions/`, find **Tallie Light** in the Online Store, and install it. To restore the default repo, enter `1` in the Extension Repo field.
 
-There are two ways to install Tallie Light, depending on whether you use the custom Tasmota firmware from this repo or a standard Tasmota build.
+   <img width="440" height="345" alt="Extension Manager showing Tallie Light in the Online Store" src="https://github.com/user-attachments/assets/b544d990-3db6-461f-a3c0-83447b46c279" />
 
-### Option A: Custom firmware (recommended, ~30 KB heap)
-
-The custom build pre-compiles Tallie Light Berry classes into the firmware, reducing heap usage by roughly 20 KB compared to the `.tapp` approach.
-
-1. Download `tl-tasmota32.factory.bin` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
-2. **First flash:** Use the [Tasmota Web Installer](https://tasmota.github.io/install/) for browser-based flashing via USB — no tools required. Click **Connect**, select your device's serial port, choose **Upload factory bin**, and select `tl-tasmota32.factory.bin`.  
-   **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`. The firmware `OtaUrl` is pre-configured to `https://ota.tallielight.com/tl-tasmota32.bin` so future OTA upgrades can be triggered directly from the Tasmota UI without specifying a URL.
-3. Connect to the `tasmota-XXXXXX` Wi-Fi hotspot, join your network, then apply the hardware template for your board (see [Hardware](#hardware)).
-4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
-5. In **Tools → Extension Manager**, set the extension repo to `https://ota.tallielight.com/extensions/` to receive future Tallie Light `.tapp` updates via the Extension Manager.
-
-### Option B: Standard Tasmota + `.tapp` extension (~50 KB heap)
-
-If you already have Tasmota running, you can install Tallie Light as a Berry app extension without reflashing. This uses more heap because Berry classes are loaded at runtime rather than compiled into the firmware.
-
-1. Ensure your Tasmota build includes `USE_BERRY_MQTTCLIENT`, `USE_MQTT_TLS`, `USE_MQTT_AWS_IOT_LIGHT`, and `USE_BERRY_ANIMATION` (see [Custom Tasmota firmware](#custom-tasmota-firmware)).
-2. Download `TallieLight.tapp` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
-3. In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload**, upload `TallieLight.tapp` with type set to **Tasmota App**, and reboot.
-4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
+3. Open the Tasmota Web UI and tap **Tallie Light** in the Configuration menu to sign in and select your teams.
 
 ## Building
 
