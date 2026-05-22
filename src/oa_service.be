@@ -260,7 +260,13 @@ class OAuthService
         return self._save_error(format("%s failed to parse JWT payload", log_header))
       end
       if !jwt_payload.contains("exp") || !jwt_payload.contains("sub") || !jwt_payload.contains("email")
-        return self._save_error(format("%s JWT missing required claims (exp, sub, email)", log_header))
+        var missing = []
+        if !jwt_payload.contains("exp")   missing.push("exp")   end
+        if !jwt_payload.contains("sub")   missing.push("sub")   end
+        if !jwt_payload.contains("email") missing.push("email") end
+        var err = format("%s JWT missing required claims: %s", log_header, missing.concat(", "))
+        self._log(err)
+        return self._save_error(err)
       end
 
       var new_exp = int(jwt_payload["exp"])
@@ -296,7 +302,7 @@ class OAuthService
   def initiate_authorization_flow()
     import json
     var tallielight_env = global._tallielight_env
-    self._log("initiating Device Authorization Flow")
+    self._log(format("initiating device authorization: %s", tallielight_env.OAUTH_DOMAIN))
     self.clear_pending_oauth_data()
 
     var log_header = "POST /oauth2/device/auth"
