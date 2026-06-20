@@ -4,8 +4,8 @@
 #   The module wrapper lives in tallielight.be.
 #
 #   - Registers the device with the backend and connects to MQTT on start.
-#   - Subscribes to scoreboard events and drives light state (solid color,
-#     animation, mute, idle) based on the active event and team priority.
+#   - Subscribes to scoreboard events and drives light state (Active, Muted,
+#     Inactive, Idle) based on the active event and team priority.
 #   - Persists configuration and saved light state across reboots.
 #
 

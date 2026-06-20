@@ -71,8 +71,8 @@ The custom build pre-compiles Tallie Light Berry classes into the firmware, redu
 1. Download `tl-tasmota32.factory.bin` from the [latest release](https://github.com/aschober/sports-lamp-berry/releases/latest).
 2. **First flash:** Use the [Tasmota Web Installer](https://tasmota.github.io/install/) for browser-based flashing via USB — no tools required. Click **Connect**, select your device's serial port, choose **Upload factory bin**, and select `tl-tasmota32.factory.bin`.  
    **OTA upgrade (already running Tasmota):** In the Tasmota web UI, go to **Firmware Upgrade → Upgrade by file upload** and upload `tl-tasmota32.bin`. The firmware `OtaUrl` is pre-configured to `https://ota.tallielight.com/tl-tasmota32.bin` so future OTA upgrades can be triggered directly from the Tasmota UI without specifying a URL.
-3. Connect to the `tasmota-XXXXXX` Wi-Fi hotspot, join your network, then apply the hardware template for your board (see [Hardware](#hardware)).
-4. Open the Tasmota web UI and tap **Tallie Light** in the configuration menu to sign in and select your teams.
+3. Connect to the `tallie-XXXXXX` Wi-Fi network and then provide credentials join your Wi-Fi network.
+4. Open the Tasmota web UI using IP Address or at `http://tallie-XXXXXX.local`. and tap **Tallie Light** in the configuration menu to sign in and select your teams.
 
 ### Option B: Tasmota Build & Install Tallie Light via Extension Manager (uses ~50 KB heap)
 

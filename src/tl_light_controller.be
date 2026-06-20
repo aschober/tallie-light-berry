@@ -23,16 +23,24 @@ class TLLightController
   #
   #   Returns: {'team_color_map': map, 'changed': bool}
   def set_solid(new_rgb, prev_team_rgb, animation_was_cleared, user_initiated, turn_on_light)
+    # Re-apply if the color changed or an animation was cleared. Animation
+    # clear always requires re-application because the engine owns the physical
+    # strip and leaves it dark after stop()/clear().
     var changed = (prev_team_rgb != new_rgb) || animation_was_cleared
-    if changed
-      if !turn_on_light && user_initiated && light.get()['power'] == false
-        tasmota.cmd(format('Color2 %s', new_rgb))
-        tasmota.cmd('Power ON')
-      else
-        tasmota.cmd(format('Color2 %s', new_rgb))
-      end
-    end
     var lstate = light.get()
+    if changed
+      tasmota.cmd(format('Color2 %s', new_rgb))
+      if !turn_on_light && user_initiated && lstate['power'] == false
+        # SetOption20 suppresses auto power-on; send it explicitly for user actions.
+        tasmota.cmd('Power ON')
+      elif animation_was_cleared
+        # Color2 alone doesn't flush the physical strip after the animation engine
+        # releases it — follow with Dimmer to force Tasmota to re-render LEDs.
+        var dimmer = tasmota.scale_uint(int(lstate['bri']), 0, 255, 0, 100)
+        tasmota.cmd(format('Dimmer %d', dimmer))
+      end
+      lstate = light.get()
+    end
     print(format('TAL: lc.set_solid: new_rgb=%s prev=%s changed=%s light.rgb=%s', new_rgb, prev_team_rgb, changed, lstate['rgb']))
     return {'team_color_map': lstate, 'changed': changed}
   end

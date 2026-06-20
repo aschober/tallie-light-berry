@@ -40,7 +40,7 @@ SOURCE_FILES=(
   "src/tallielight_ui.be"
 )
 
-# Berry files stripped of comments and blank lines (paths relative to build/).
+# Berry files stripped of comments, prints, and blank lines (paths relative to build/).
 STRIP_FILES=(
   "oauth.be"
   "oa_service.be"
